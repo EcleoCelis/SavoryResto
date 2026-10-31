@@ -1,0 +1,401 @@
+.page {
+  background: var(--brand-cream, #f8f4ec);
+  color: var(--text-primary, #18251e);
+  min-height: 100svh;
+  display: flex;
+  flex-direction: column;
+}
+
+.content {
+  flex: 1;
+  margin: 0 auto;
+  max-width: 800px;
+  padding: 48px clamp(18px, 5vw, 48px) 88px;
+  width: 100%;
+}
+
+.back {
+  align-items: center;
+  color: var(--brand-green, #173f35);
+  display: inline-flex;
+  gap: 6px;
+  font-size: 13px;
+  font-weight: 700;
+  text-decoration: none;
+  transition: transform var(--transition-fast, 150ms ease);
+}
+
+.back:hover {
+  transform: translateX(-3px);
+  color: var(--brand-green-deep, #092b1c);
+}
+
+.card {
+  background: white;
+  border: 1px solid var(--border-subtle, #e8e3d9);
+  border-radius: var(--radius-xl, 24px);
+  box-shadow: 0 8px 30px rgba(24, 37, 30, 0.05);
+  margin-top: 24px;
+  padding: clamp(24px, 6vw, 48px);
+  animation: fadeInUp var(--motion-entrance, 360ms) var(--ease-out);
+}
+
+.kicker {
+  color: var(--brand-gold, #c49a4a);
+  font-size: 11px;
+  font-weight: 800;
+  letter-spacing: 0.16em;
+  margin: 0 0 10px;
+  text-transform: uppercase;
+}
+
+.card h1 {
+  font-family: Georgia, serif;
+  font-size: clamp(32px, 5vw, 44px);
+  letter-spacing: -0.04em;
+  line-height: 1.1;
+  margin: 0 0 10px;
+  color: var(--text-primary, #18251e);
+}
+
+.orderNumber {
+  color: var(--brand-green-deep, #092b1c);
+  font-weight: 800;
+  font-size: 16px;
+  margin: 0 0 12px;
+}
+
+.serviceLine {
+  color: var(--text-secondary, #405249);
+  font-size: 14px;
+  margin: 0 0 16px;
+}
+
+.status {
+  background: var(--status-pending-bg, #fff8e6);
+  border: 1px solid var(--status-pending-border, #f8dfaa);
+  border-radius: var(--radius-full, 999px);
+  color: var(--status-pending, #b47a14);
+  display: inline-block;
+  font-size: 12px;
+  font-weight: 800;
+  padding: 6px 14px;
+  margin-bottom: 14px;
+}
+
+.fulfillmentNote {
+  background: var(--brand-cream-surface, #fcfaf6);
+  border: 1px solid var(--border-subtle, #e8e3d9);
+  border-radius: var(--radius-md, 10px);
+  color: var(--text-secondary, #405249);
+  font-size: 14px;
+  line-height: 1.55;
+  padding: 14px 18px;
+  margin-bottom: 24px;
+}
+
+.items {
+  border-top: 1px solid var(--border-subtle, #e8e3d9);
+  display: grid;
+  gap: 14px;
+  margin-top: 28px;
+  padding-top: 20px;
+}
+
+.items article {
+  align-items: center;
+  display: flex;
+  justify-content: space-between;
+  gap: 20px;
+}
+
+.items b {
+  display: block;
+  font-size: 15px;
+  color: var(--text-primary, #18251e);
+}
+
+.items span,
+.items small {
+  display: block;
+  color: var(--text-muted, #66756d);
+  font-size: 13px;
+  margin-top: 3px;
+}
+
+.itemSubtotal {
+  color: var(--brand-green-deep, #092b1c);
+  font-size: 15px;
+  font-weight: 700;
+}
+
+.total {
+  align-items: center;
+  border-top: 2px solid var(--border-subtle, #e8e3d9);
+  display: flex;
+  font-size: 18px;
+  font-weight: 800;
+  justify-content: space-between;
+  margin-top: 24px;
+  padding-top: 18px;
+}
+
+.total strong {
+  color: var(--brand-gold-dark, #9e7529);
+  font-size: 22px;
+}
+
+/* Order Tracking Progression */
+.tracking {
+  border-top: 1px solid var(--border-subtle, #e8e3d9);
+  margin-top: 28px;
+  padding-top: 24px;
+}
+
+.trackingHeading {
+  align-items: baseline;
+  display: flex;
+  gap: 12px;
+  justify-content: space-between;
+  margin-bottom: 16px;
+}
+
+.tracking h2,
+.cancellationConfirm h2 {
+  font-family: Georgia, serif;
+  font-size: 22px;
+  margin: 0;
+  color: var(--text-primary, #18251e);
+}
+
+.trackingHeading span,
+.refreshNote,
+.reason {
+  color: var(--text-muted, #66756d);
+  font-size: 12px;
+}
+
+.tracking ol {
+  display: grid;
+  gap: 14px;
+  list-style: none;
+  margin: 16px 0 0;
+  padding: 0;
+}
+
+.tracking li {
+  align-items: center;
+  color: var(--border-medium, #d5cec2);
+  display: flex;
+  gap: 12px;
+  transition: color var(--motion-standard, 220ms) var(--ease-out);
+}
+
+.tracking li > span {
+  align-items: center;
+  border: 2px solid currentColor;
+  border-radius: 50%;
+  display: inline-flex;
+  font-size: 12px;
+  font-weight: 800;
+  height: 26px;
+  justify-content: center;
+  width: 26px;
+  transition: all var(--motion-standard, 220ms) var(--ease-out);
+}
+
+.tracking li b {
+  font-size: 14px;
+  color: var(--text-primary, #18251e);
+}
+
+.tracking li small {
+  color: var(--text-muted, #66756d);
+  font-size: 12px;
+  margin-top: 2px;
+  display: block;
+}
+
+.tracking .complete {
+  color: var(--status-ready, #1e7e34);
+}
+
+.tracking .complete li > span {
+  background: var(--status-ready-bg, #e8f7ed);
+}
+
+.tracking .current {
+  color: var(--brand-green, #173f35);
+}
+
+.tracking .current li > span {
+  background: var(--brand-gold-bright, #f4be37);
+  border-color: var(--brand-gold, #c49a4a);
+  color: var(--brand-green-deep, #092b1c);
+  box-shadow: 0 0 0 4px rgba(244, 190, 55, 0.28);
+}
+
+.cancelledTracking {
+  color: var(--status-danger, #c53030);
+  font-weight: 700;
+  padding: 12px 16px;
+  background: var(--status-danger-bg, #fdf0f0);
+  border-radius: var(--radius-md, 10px);
+  margin-top: 14px;
+}
+
+/* Cancellation Modal */
+.cancellation {
+  margin-top: 24px;
+}
+
+.cancellation > button {
+  background: transparent;
+  border: 1px solid var(--status-danger-border, #f7c5c5);
+  border-radius: var(--radius-full, 999px);
+  color: var(--status-danger, #c53030);
+  cursor: pointer;
+  font-size: 13px;
+  font-weight: 700;
+  padding: 10px 18px;
+  transition: var(--transition-interactive);
+}
+
+.cancellation > button:hover {
+  background: var(--status-danger-bg, #fdf0f0);
+}
+
+.cancellation > button:active {
+  transform: scale(0.96);
+}
+
+.cancellationConfirm {
+  background: #fff7f5;
+  border: 1px solid var(--status-danger-border, #f7c5c5);
+  border-radius: var(--radius-lg, 16px);
+  margin-top: 16px;
+  padding: 24px;
+  animation: scaleIn var(--motion-standard, 220ms) var(--ease-out);
+}
+
+.cancellationConfirm h2 {
+  font-size: 20px;
+  color: var(--status-danger, #c53030);
+}
+
+.cancellationConfirm p {
+  color: var(--text-secondary, #405249);
+  font-size: 14px;
+  line-height: 1.5;
+  margin: 8px 0 16px;
+}
+
+.cancellationConfirm > div {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+}
+
+.cancellationConfirm button {
+  border-radius: var(--radius-full, 999px);
+  cursor: pointer;
+  font-size: 13px;
+  font-weight: 700;
+  padding: 10px 18px;
+  transition: var(--transition-interactive);
+}
+
+.cancellationConfirm button:active {
+  transform: scale(0.96);
+}
+
+.cancellationConfirm button:first-child {
+  background: white;
+  border: 1px solid var(--border-medium, #d5cec2);
+  color: var(--text-primary, #18251e);
+}
+
+.cancellationConfirm button:first-child:hover {
+  background: #f7f5f0;
+}
+
+.cancellationConfirm button:last-child {
+  background: var(--status-danger, #c53030);
+  border: 1px solid var(--status-danger, #c53030);
+  color: white;
+}
+
+.cancellationConfirm button:last-child:hover {
+  background: #b02525;
+}
+
+.cancellationError {
+  color: var(--status-danger, #c53030) !important;
+  font-weight: 700;
+  font-size: 13px;
+}
+
+.actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px;
+  margin-top: 32px;
+}
+
+.actions a {
+  border: 1px solid var(--brand-green, #173f35);
+  border-radius: var(--radius-full, 999px);
+  color: var(--brand-green, #173f35);
+  display: inline-block;
+  font-size: 13px;
+  font-weight: 700;
+  padding: 12px 22px;
+  text-decoration: none;
+  transition: var(--transition-interactive);
+}
+
+.actions a:hover {
+  background: rgba(23, 63, 53, 0.06);
+  transform: translateY(-1px);
+}
+
+.actions a:active {
+  transform: translateY(0) scale(0.97);
+}
+
+.actions .menuLink {
+  background: var(--brand-green, #173f35);
+  color: white;
+}
+
+.actions .menuLink:hover {
+  background: var(--brand-green-deep, #092b1c);
+  transform: translateY(-1px);
+}
+
+.actions .menuLink:active {
+  transform: translateY(0) scale(0.97);
+}
+
+/* Responsive Media Queries */
+@media (max-width: 580px) {
+  .content {
+    padding: 36px 16px 60px;
+  }
+  .items article {
+    align-items: start;
+    flex-direction: column;
+    gap: 6px;
+  }
+  .trackingHeading {
+    align-items: start;
+    flex-direction: column;
+    gap: 4px;
+  }
+  .actions {
+    flex-direction: column;
+  }
+  .actions a {
+    text-align: center;
+  }
+}

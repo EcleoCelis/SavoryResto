@@ -1,0 +1,130 @@
+/*
+ * StaggeredMenuButton
+ * Continuous staggered drift for a 3-stroke hamburger icon.
+ *
+ * Geometry (viewBox 0 0 28 20, 1 unit = 1 CSS px at the rendered size):
+ *   long   18u  at rest x 4–22, y 4
+ *   medium 12u  at rest x 10–22, y 10
+ *   short   6u  at rest x 16–22, y 16
+ * Round caps add 1u at each end, so every stroke must stay within x 1–27.
+ * Drift ranges below are chosen so no stroke ever leaves that box.
+ */
+
+.button {
+  -webkit-tap-highlight-color: transparent;
+  align-items: center;
+  background: transparent;
+  border: 0;
+  border-radius: var(--radius-md, 8px);
+  cursor: pointer;
+  justify-content: center;
+  touch-action: manipulation;
+}
+
+.icon {
+  display: block;
+  overflow: visible;
+  pointer-events: none; /* clicks/taps always land on the <button> */
+}
+
+/* ---------- Closed state: drifting strokes ---------- */
+
+.stepped {
+  transform-box: view-box;
+  transform-origin: 14px 10px;
+  transition: opacity var(--motion-standard) var(--ease-standard),
+              transform var(--motion-transition) var(--ease-standard);
+}
+
+.line {
+  stroke: currentColor;
+  stroke-linecap: round;
+  stroke-width: 2;
+  will-change: transform;
+  /* alternate + symmetric ease-in-out = decelerate at each boundary, then reverse; no reset jump */
+  animation-direction: alternate;
+  animation-iteration-count: infinite;
+  animation-timing-function: cubic-bezier(0.45, 0, 0.55, 1);
+  animation-fill-mode: both;
+}
+
+/* Long reference stroke: smallest, slowest drift (x 2–20 … 7–25). Full cycle 3.0s. */
+.lineLong {
+  animation-name: longLineDrift;
+  animation-duration: 1.5s;
+}
+
+/* Medium stroke: x 13–25 … 3–15. Full cycle 2.4s, slight phase offset. */
+.lineMedium {
+  animation-name: mediumLineDrift;
+  animation-duration: 1.2s;
+  animation-delay: -0.15s;
+}
+
+/* Short stroke: x 20–26 … 4–10. Full cycle 1.9s so it never locks step with the others. */
+.lineShort {
+  animation-name: shortLineDrift;
+  animation-duration: 0.95s;
+}
+
+@keyframes longLineDrift {
+  from { transform: translateX(-2px); }
+  to   { transform: translateX(3px); }
+}
+
+@keyframes mediumLineDrift {
+  from { transform: translateX(3px); }
+  to   { transform: translateX(-7px); }
+}
+
+@keyframes shortLineDrift {
+  from { transform: translateX(4px); }
+  to   { transform: translateX(-12px); }
+}
+
+/* ---------- Open state: X ---------- */
+
+.cross {
+  opacity: 0;
+  transition: opacity var(--motion-standard) var(--ease-standard);
+}
+
+.crossLine {
+  stroke: currentColor;
+  stroke-linecap: round;
+  stroke-width: 2;
+  transform-box: view-box;
+  transform-origin: 14px 10px;
+  transform: rotate(0deg) scaleX(0.4);
+  transition: transform var(--motion-transition) var(--ease-standard);
+}
+
+.button[aria-expanded="true"] .stepped {
+  opacity: 0;
+  transform: scaleX(0.4);
+}
+
+/* Pause (not remove) the drift so closing resumes from the same position. */
+.button[aria-expanded="true"] .line {
+  animation-play-state: paused;
+}
+
+.button[aria-expanded="true"] .cross {
+  opacity: 1;
+}
+
+.button[aria-expanded="true"] .crossA {
+  transform: rotate(45deg) scaleX(1);
+}
+
+.button[aria-expanded="true"] .crossB {
+  transform: rotate(-45deg) scaleX(1);
+}
+
+/* ---------- Reduced motion: static stepped icon ---------- */
+
+@media (prefers-reduced-motion: reduce) {
+  .line {
+    animation: none;
+  }
+}

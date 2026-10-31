@@ -1,0 +1,286 @@
+.page {
+  --green: #092b1c;
+  --green-soft: #173f35;
+  --green-hover: #235548;
+  --cream: #f8f5ec;
+  --surface: #ffffff;
+  --gold: #f4be37;
+  --gold-dark: #c49a4a;
+  --ink: #18251e;
+  --muted: #6b6b63;
+  --border: #e5e0d6;
+  --border-light: #ece8dc;
+  --danger: #b94a48;
+  --success: #2e6b5b;
+
+  background: var(--cream);
+  color: var(--ink);
+  min-height: 100svh;
+  display: flex;
+  flex-direction: column;
+}
+
+.mainContent {
+  flex: 1;
+  padding-bottom: 80px;
+}
+
+/* Hero & Header Section */
+.hero {
+  background: var(--green);
+  color: white;
+  padding: 68px clamp(20px, 8vw, 120px) 60px;
+  text-align: center;
+  position: relative;
+  overflow: hidden;
+}
+
+.hero::after {
+  content: "";
+  position: absolute;
+  top: -120px;
+  right: -100px;
+  width: 320px;
+  height: 320px;
+  border-radius: 50%;
+  border: 1px solid rgba(244, 190, 55, 0.12);
+  pointer-events: none;
+}
+
+.heroContent {
+  max-width: 720px;
+  margin: 0 auto;
+  position: relative;
+  z-index: 1;
+}
+
+.kicker {
+  color: var(--gold);
+  font-size: 11px;
+  font-weight: 800;
+  letter-spacing: 0.14em;
+  margin: 0 0 14px;
+  text-transform: uppercase;
+}
+
+.title {
+  color: white;
+  font-family: Georgia, "Times New Roman", serif;
+  font-size: clamp(34px, 5.5vw, 52px);
+  letter-spacing: -0.03em;
+  line-height: 1.1;
+  margin: 0;
+}
+
+.subtitle {
+  color: #d8e0d9;
+  font-size: 16px;
+  line-height: 1.65;
+  margin: 18px auto 0;
+  max-width: 580px;
+}
+
+/* Main Container */
+.container {
+  max-width: 1040px;
+  margin: 0 auto;
+  padding: 0 24px;
+}
+
+.contentWrap {
+  margin-top: 50px;
+}
+
+/* Card Styling */
+.card {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 16px;
+  padding: clamp(28px, 4vw, 44px);
+  box-shadow: 0 10px 30px rgba(9, 43, 28, 0.04);
+  margin-bottom: 32px;
+}
+
+.cardHeader {
+  margin-bottom: 24px;
+}
+
+.cardTitle {
+  font-family: Georgia, "Times New Roman", serif;
+  font-size: 26px;
+  color: var(--green);
+  margin: 0 0 10px;
+}
+
+.cardText {
+  color: var(--muted);
+  font-size: 15px;
+  line-height: 1.65;
+  margin: 0;
+}
+
+/* Grids */
+.gridTwoCol {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 32px;
+}
+
+.gridThreeCol {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 24px;
+}
+
+/* Feature & Values Blocks */
+.valueCard {
+  background: #fdfbf7;
+  border: 1px solid var(--border-light);
+  border-radius: 12px;
+  padding: 24px 20px;
+  text-align: center;
+  transition: var(--transition-card);
+}
+
+.valueCard:hover {
+  transform: translateY(-3px);
+  box-shadow: 0 10px 28px rgba(23, 63, 53, 0.08);
+}
+
+.valueIcon {
+  width: 48px;
+  height: 48px;
+  border-radius: 50%;
+  background: #eef4f0;
+  color: var(--green);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 20px;
+  margin-bottom: 14px;
+}
+
+.valueTitle {
+  font-family: Georgia, serif;
+  font-size: 19px;
+  color: var(--green);
+  margin: 0 0 8px;
+}
+
+.valueDescription {
+  color: var(--muted);
+  font-size: 13px;
+  line-height: 1.55;
+  margin: 0;
+}
+
+/* Buttons and Links */
+.primaryButton {
+  background: var(--gold);
+  border: 0;
+  border-radius: 999px;
+  color: #1f2b1e;
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  font-family: inherit;
+  font-size: 13px;
+  font-weight: 800;
+  letter-spacing: 0.04em;
+  padding: 13px 26px;
+  text-decoration: none;
+  transition: var(--transition-interactive);
+}
+
+.primaryButton:hover:not(:disabled) {
+  opacity: 0.95;
+  transform: translateY(-2px);
+  box-shadow: 0 4px 14px rgba(244, 190, 55, 0.4);
+}
+
+.primaryButton:active:not(:disabled) {
+  transform: translateY(0) scale(0.97);
+}
+
+.primaryButton:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+
+.outlineButton {
+  background: transparent;
+  border: 1px solid var(--green);
+  border-radius: 999px;
+  color: var(--green);
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  font-family: inherit;
+  font-size: 13px;
+  font-weight: 700;
+  padding: 12px 24px;
+  text-decoration: none;
+  transition: var(--transition-interactive);
+}
+
+.outlineButton:hover {
+  background: var(--green);
+  color: white;
+  transform: translateY(-1px);
+}
+
+.outlineButton:active {
+  transform: translateY(0) scale(0.97);
+}
+
+/* Call to action banner */
+.ctaBanner {
+  background: var(--green);
+  color: white;
+  border-radius: 16px;
+  padding: 44px 36px;
+  text-align: center;
+  margin-top: 48px;
+}
+
+.ctaBanner h2 {
+  font-family: Georgia, serif;
+  font-size: clamp(26px, 4vw, 34px);
+  margin: 0 0 12px;
+}
+
+.ctaBanner p {
+  color: #cbd8cf;
+  font-size: 15px;
+  max-width: 500px;
+  margin: 0 auto 24px;
+  line-height: 1.6;
+}
+
+.ctaActions {
+  display: flex;
+  gap: 16px;
+  justify-content: center;
+  flex-wrap: wrap;
+}
+
+/* Responsive adjustments */
+@media (max-width: 768px) {
+  .hero {
+    padding: 50px 20px 42px;
+  }
+  .gridTwoCol {
+    grid-template-columns: 1fr;
+    gap: 20px;
+  }
+  .gridThreeCol {
+    grid-template-columns: 1fr;
+    gap: 16px;
+  }
+  .ctaBanner {
+    padding: 32px 20px;
+  }
+}

@@ -1,0 +1,20 @@
+.sidebar { background: #092b1c; border-right: 1px solid #315445; color: #f8f6ed; display: flex; flex-direction: column; min-height: 100svh; padding: 22px 14px; position: sticky; top: 0; width: 258px; z-index: 20; }
+.brand { align-items: center; border-bottom: 1px solid #315445; display: flex; gap: 10px; padding: 2px 7px 21px; }
+.mark { align-items: center; background: #f4be37; border-radius: 9px; color: #092b1c; display: inline-flex; font-family: Georgia, serif; font-size: 24px; font-weight: 800; height: 34px; justify-content: center; width: 34px; }
+.brand strong, .session strong { display: block; font-size: 14px; }
+.brand span:not(.mark), .session span:not(.avatar) { color: #b6c8bc; display: block; font-size: 11px; margin-top: 2px; }
+.close { background: transparent; border: 0; color: #fff; cursor: pointer; display: none; font-size: 20px; line-height: 1; margin-left: auto; min-height: 44px; min-width: 44px; }
+.navigation { display: grid; gap: 5px; margin-top: 26px; }
+.navigation > p { color: #f4be37; font-size: 10px; font-weight: 800; letter-spacing: .14em; margin: 0 8px 8px; text-transform: uppercase; }
+.navigation a { align-items: center; border-radius: 9px; color: #d9e3dc; display: grid; font-size: 14px; font-weight: 700; gap: 11px; grid-template-columns: 20px 1fr auto; min-height: 45px; padding: 0 9px; text-decoration: none; }
+.navigation a:hover { background: #143b2a; color: #fff; }
+.navigation a:focus-visible, .session button:focus-visible, .close:focus-visible { outline: 3px solid #f4be37; outline-offset: 2px; }
+.navigation svg { height: 19px; width: 19px; }
+.navigation b { background: #315445; border-radius: 999px; color: #fff; font-size: 11px; min-width: 23px; padding: 4px 6px; text-align: center; }
+.navigation .active { background: #f4be37; color: #14291d; }
+.navigation .active b { background: #ffffff99; color: #14291d; }
+.session { align-items: center; border-top: 1px solid #315445; display: grid; gap: 8px 10px; grid-template-columns: 34px 1fr; margin-top: auto; padding: 18px 7px 0; }
+.avatar { align-items: center; background: #315445; border-radius: 50%; display: inline-flex; font-size: 14px; font-weight: 800; height: 34px; justify-content: center; width: 34px; }
+.session button { background: transparent; border: 1px solid #668373; border-radius: 8px; color: #fff; cursor: pointer; font: inherit; font-size: 12px; font-weight: 800; grid-column: 1 / -1; margin-top: 4px; min-height: 42px; padding: 8px 12px; text-align: left; }
+.session button:hover { background: #143b2a; }
+@media (max-width: 820px) { .sidebar { box-shadow: 12px 0 34px #0005; left: 0; position: fixed; transform: translateX(-105%); transition: transform .2s ease; width: min(86vw, 300px); } .open { transform: translateX(0); } .close { align-items: center; display: inline-flex; justify-content: center; } }
