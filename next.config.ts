@@ -6,14 +6,36 @@ const scriptSrc = isProduction
   ? "'self' 'unsafe-inline'"
   : "'self' 'unsafe-inline' 'unsafe-eval'";
 
-const apiUrl = process.env.NEXT_PUBLIC_API_URL?.trim();
-let parsedApiUrl: URL | null = null;
-if (apiUrl) {
+function normalizeOriginUrl(rawValue: string | undefined): URL | null {
+  if (!rawValue) return null;
+  const cleaned = rawValue
+    .trim()
+    .replace(/^["'`]+|["'`]+$/g, "")
+    .trim();
+  if (!cleaned) return null;
+
+  const withScheme = /^https?:\/\//i.test(cleaned)
+    ? cleaned
+    : /^(localhost|127\.0\.0\.1)(:\d+)?(\/|$)/i.test(cleaned)
+      ? `http://${cleaned}`
+      : `https://${cleaned}`;
+
   try {
-    parsedApiUrl = new URL(apiUrl);
+    return new URL(withScheme);
   } catch {
-    parsedApiUrl = null;
+    return null;
   }
+}
+
+const parsedApiUrl = normalizeOriginUrl(process.env.NEXT_PUBLIC_API_URL);
+const parsedBackendInternalUrl = normalizeOriginUrl(
+  process.env.BACKEND_INTERNAL_URL
+);
+
+if (process.env.BACKEND_INTERNAL_URL?.trim() && !parsedBackendInternalUrl) {
+  throw new Error(
+    "Invalid BACKEND_INTERNAL_URL environment variable. Provide a valid backend origin such as https://your-service.onrender.com."
+  );
 }
 
 const devLoopbackOrigins = isProduction
@@ -97,7 +119,7 @@ const nextConfig: NextConfig = {
   },
   async rewrites() {
     const backendOrigin =
-      process.env.BACKEND_INTERNAL_URL?.trim().replace(/\/+$/, "") ||
+      parsedBackendInternalUrl?.origin ||
       parsedApiUrl?.origin ||
       "http://127.0.0.1:8001";
     return [
