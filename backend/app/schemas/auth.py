@@ -1,3 +1,4 @@
+from datetime import datetime
 import re
 
 from pydantic import BaseModel, ConfigDict, EmailStr, Field, field_validator, model_validator
@@ -63,6 +64,12 @@ class CustomerMeResponse(BaseModel):
     email: EmailStr | None
     phone: str | None
     address: str | None
+    avatar_url: str | None = None
+    is_active: bool = True
+    created_at: datetime | None = None
+    preferred_payment_code: str | None = None
+    default_order_type: str | None = None
+    theme_preference: str = "system"
 
 
 class LogoutResponse(BaseModel):

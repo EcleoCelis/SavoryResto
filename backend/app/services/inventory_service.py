@@ -12,6 +12,7 @@ from app.schemas.inventory import InventoryItemResponse, InventoryTransactionCre
 
 
 ORDER_CONFIRMATION_REFERENCE = "order_confirmation"
+ORDER_CANCELLATION_REFERENCE = "order_cancellation"
 
 
 def stock_status(item: InventoryItem) -> str:
@@ -121,6 +122,66 @@ def deduct_inventory_for_confirmed_order(db: Session, order: Order, performed_by
             notes=f"Order {order.order_number} confirmed.",
             created_at=now,
         ))
+
+
+def restore_inventory_for_cancelled_order(db: Session, order: Order) -> None:
+    """Restore deducted stock once when a confirmed order is cancelled."""
+    sale_transactions = list(
+        db.scalars(
+            select(InventoryTransaction).where(
+                InventoryTransaction.reference_type == ORDER_CONFIRMATION_REFERENCE,
+                InventoryTransaction.reference_id == order.id,
+                InventoryTransaction.transaction_type == "sale",
+            )
+        )
+    )
+    if not sale_transactions:
+        return
+
+    already_restored = db.scalar(
+        select(InventoryTransaction.id).where(
+            InventoryTransaction.reference_type == ORDER_CANCELLATION_REFERENCE,
+            InventoryTransaction.reference_id == order.id,
+            InventoryTransaction.transaction_type == "return",
+        )
+    )
+    if already_restored is not None:
+        return
+
+    item_ids = sorted({tx.inventory_item_id for tx in sale_transactions})
+    items = list(
+        db.scalars(
+            select(InventoryItem)
+            .where(InventoryItem.id.in_(item_ids))
+            .order_by(InventoryItem.id)
+            .with_for_update()
+        )
+    )
+    items_by_id = {item.id: item for item in items}
+    now = datetime.now(timezone.utc)
+
+    for sale_tx in sale_transactions:
+        item = items_by_id.get(sale_tx.inventory_item_id)
+        if item is None:
+            continue
+        restore_qty = abs(Decimal(sale_tx.quantity_change))
+        if restore_qty <= 0:
+            continue
+        item.current_stock += restore_qty
+        item.updated_at = now
+        db.add(
+            InventoryTransaction(
+                inventory_item_id=item.id,
+                performed_by=sale_tx.performed_by,
+                transaction_type="return",
+                quantity_change=restore_qty,
+                unit_cost=sale_tx.unit_cost if sale_tx.unit_cost is not None else item.unit_cost,
+                reference_type=ORDER_CANCELLATION_REFERENCE,
+                reference_id=order.id,
+                notes=f"Order {order.order_number} cancelled by customer; stock restored.",
+                created_at=now,
+            )
+        )
 
 
 def record_inventory_transaction(

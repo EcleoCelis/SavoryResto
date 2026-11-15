@@ -52,6 +52,20 @@ class SettingsSecurityUnitTests(TestCase):
             )
         self.assertIn("must be changed from the development template key", str(ctx.exception))
 
+    def test_staging_rejects_short_or_template_jwt_secret(self):
+        with self.assertRaises(ValidationError):
+            Settings(
+                DATABASE_URL="postgresql+psycopg://user:pass@localhost:5432/db",
+                ENVIRONMENT="staging",
+                JWT_SECRET_KEY="short-secret",
+            )
+        with self.assertRaises(ValidationError):
+            Settings(
+                DATABASE_URL="postgresql+psycopg://user:pass@localhost:5432/db",
+                ENVIRONMENT="staging",
+                JWT_SECRET_KEY="replace-with-a-secure-random-secret-key-at-least-32-chars",
+            )
+
     def test_production_cookie_secure_defaults_to_true(self):
         prod_settings = Settings(
             DATABASE_URL="postgresql+psycopg://user:pass@localhost:5432/db",

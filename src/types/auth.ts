@@ -1,9 +1,17 @@
+export type ThemePreference = "light" | "dark" | "system";
+
 export interface CustomerUser {
   customer_id: number;
   full_name: string;
   email: string | null;
   phone: string | null;
   address: string | null;
+  avatar_url?: string | null;
+  is_active?: boolean;
+  created_at?: string | null;
+  preferred_payment_code?: string | null;
+  default_order_type?: "dine_in" | "takeout" | null;
+  theme_preference?: ThemePreference;
 }
 
 export interface LoginPayload {

@@ -1,4 +1,12 @@
-import type { KdsOrder, StaffLoginResponse, StaffRole, StaffUser } from "../../types/staff";
+import type {
+  KdsOrder,
+  ManagerCustomerDetail,
+  ManagerCustomerListResponse,
+  StaffLoginResponse,
+  StaffRole,
+  StaffUser,
+} from "../../types/staff";
+import { getApiBaseUrl } from "./base-url";
 
 export class StaffApiError extends Error {
   constructor(public status: number, message: string) {
@@ -37,25 +45,7 @@ export function setStaffToken(token: string | null): void {
 }
 
 export function getStaffApiUrl(): string {
-  if (typeof window !== "undefined") {
-    const configured = process.env.NEXT_PUBLIC_API_URL || "http://127.0.0.1:8001";
-    try {
-      const parsed = new URL(configured);
-      // In local development, align the API hostname with window.location.hostname
-      // to avoid modern browser cross-site SameSite=Lax cookie restrictions between localhost and 127.0.0.1
-      if (
-        (parsed.hostname === "localhost" || parsed.hostname === "127.0.0.1") &&
-        (window.location.hostname === "localhost" || window.location.hostname === "127.0.0.1")
-      ) {
-        parsed.hostname = window.location.hostname;
-        return parsed.origin;
-      }
-      return configured;
-    } catch {
-      return configured;
-    }
-  }
-  return process.env.NEXT_PUBLIC_API_URL || "http://127.0.0.1:8001";
+  return getApiBaseUrl();
 }
 
 async function request<T>(path: string, init?: RequestInit): Promise<T> {
@@ -144,4 +134,61 @@ export function updateKdsStatus(
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ status }),
   });
+}
+
+export function getManagerCustomers(params?: {
+  search?: string;
+  status?: "all" | "active" | "deactivated";
+  page?: number;
+}): Promise<ManagerCustomerListResponse> {
+  const sp = new URLSearchParams();
+  if (params?.search?.trim()) sp.set("search", params.search.trim());
+  if (params?.status) sp.set("status", params.status);
+  if (params?.page) sp.set("page", String(params.page));
+  const query = sp.toString();
+  return request<ManagerCustomerListResponse>(
+    `/api/v1/manager/customers${query ? `?${query}` : ""}`
+  ).then((res) => ({
+    ...res,
+    items: (res.items || []).map((c) => ({
+      ...c,
+      total_spent: Number(c.total_spent),
+    })),
+  }));
+}
+
+export function getManagerCustomerDetail(customerId: number): Promise<ManagerCustomerDetail> {
+  return request<ManagerCustomerDetail>(`/api/v1/manager/customers/${customerId}`).then((res) => ({
+    ...res,
+    customer: {
+      ...res.customer,
+      total_spent: Number(res.customer.total_spent),
+    },
+    recent_orders: (res.recent_orders || []).map((o) => ({
+      ...o,
+      total: Number(o.total),
+    })),
+  }));
+}
+
+export function updateManagerCustomerStatus(
+  customerId: number,
+  isActive: boolean,
+  reason?: string
+): Promise<ManagerCustomerDetail> {
+  return request<ManagerCustomerDetail>(`/api/v1/manager/customers/${customerId}/status`, {
+    method: "PATCH",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ is_active: isActive, reason: reason?.trim() || undefined }),
+  }).then((res) => ({
+    ...res,
+    customer: {
+      ...res.customer,
+      total_spent: Number(res.customer.total_spent),
+    },
+    recent_orders: (res.recent_orders || []).map((o) => ({
+      ...o,
+      total: Number(o.total),
+    })),
+  }));
 }

@@ -5,6 +5,7 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useAuth } from "../../components/auth/AuthProvider";
 import { CheckIcon, EyeIcon, EyeOffIcon } from "../../components/ui/Icons";
+import { getApiBaseUrl } from "../../lib/api/base-url";
 import styles from "./register.module.css";
 
 type RegistrationErrors = {
@@ -200,9 +201,7 @@ export default function RegisterPage() {
  setIsLoading(true);
 
   try {
-    const apiUrl =
-      process.env.NEXT_PUBLIC_API_URL ||
-      "http://127.0.0.1:8001";
+    const apiUrl = getApiBaseUrl();
 
     const response = await fetch(
       `${apiUrl}/api/v1/auth/register`,

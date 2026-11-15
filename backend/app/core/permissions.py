@@ -31,6 +31,8 @@ class Permission(StrEnum):
     SYSTEM_CONFIG_MANAGE = "system_config.manage"
     AUDIT_VIEW = "audit.view"
     ORDER_COMPLETE = "order.complete"
+    CUSTOMER_VIEW = "customer.view"
+    CUSTOMER_MANAGE = "customer.manage"
 
 
 # Authoritative mapping of the three application roles to permissions:
@@ -56,6 +58,8 @@ ROLE_PERMISSIONS: dict[str, frozenset[Permission]] = {
         Permission.AUDIT_VIEW,
         Permission.ORDER_COMPLETE,
         Permission.KDS_VIEW,
+        Permission.CUSTOMER_VIEW,
+        Permission.CUSTOMER_MANAGE,
         # Manager is also authorized to view KDS queue for service supervision
     }),
 }

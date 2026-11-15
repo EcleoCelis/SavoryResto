@@ -1,847 +1,1929 @@
 "use client";
 
-import { useCallback, useEffect, useState } from "react";
+import Image from "next/image";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
+import { useCallback, useEffect, useRef, useState, type ChangeEvent, type FormEvent } from "react";
+
 import { useAuth } from "../../components/auth/AuthProvider";
+import { Footer } from "../../components/layout/Footer";
+import { Header } from "../../components/layout/Header";
+import { useTheme } from "../../components/theme/ThemeProvider";
+import { AllergyConflictNotice } from "../../components/menu/AllergyConflictNotice";
 import {
-  CheckIcon,
+  AlertTriangleIcon,
+  BellIcon,
+  CameraIcon,
   CloseIcon,
-  EditIcon,
+  CreditCardIcon,
+  HeartIcon,
+  InfoIcon,
+  LockIcon,
+  LogOutIcon,
+  MapPinIcon,
+  MonitorIcon,
+  MoonIcon,
   PlusIcon,
+  ReceiptIcon,
+  RefreshIcon,
+  SlidersIcon,
+  SunIcon,
   TrashIcon,
+  UserIcon,
 } from "../../components/ui/Icons";
+import { AuthApiError } from "../../lib/api/auth";
+import { getPaymentMethods } from "../../lib/api/payment-methods";
 import {
+  changeCustomerEmail,
+  changeCustomerPassword,
   createCustomerAddress,
+  deactivateCustomerAccount,
   deleteCustomerAddress,
   getCustomerAddresses,
+  getCustomerFavorites,
+  getCustomerProfile,
+  removeCustomerAvatar,
+  removeCustomerFavorite,
   setDefaultAddress,
   updateCustomerAddress,
+  updateCustomerPreferences,
   updateCustomerProfile,
+  uploadCustomerAvatar,
 } from "../../lib/api/customer";
-import type { CustomerAddress } from "../../types/customer";
+import { getOrders } from "../../lib/api/orders";
+import { getCategories } from "../../lib/api/products";
+import {
+  ALLERGEN_OPTIONS,
+  DIETARY_PREFERENCE_OPTIONS,
+  detectDishConflicts,
+} from "../../lib/personalization";
+import { reorderToCart } from "../../lib/reorder";
+import type { ThemePreference } from "../../types/auth";
+import type { PaymentMethod } from "../../types/payment-method";
+import type {
+  AddressCreateInput,
+  CustomerAddress,
+  CustomerProfile,
+  FavoriteProduct,
+} from "../../types/customer";
+import type { OrderHistory } from "../../types/order";
+import type { Category } from "../../types/product";
 import styles from "./customer.module.css";
 
-interface AddressFormData {
-  label: string;
-  recipient_name: string;
-  phone: string;
-  street_address: string;
-  city: string;
-  state_province: string;
-  postal_code: string;
-  delivery_instructions: string;
-  is_default: boolean;
-}
+type SectionId =
+  | "profile"
+  | "orders"
+  | "addresses"
+  | "favorites"
+  | "preferences"
+  | "payment"
+  | "notifications"
+  | "appearance"
+  | "security";
 
-const initialAddressFormData: AddressFormData = {
+const VALID_SECTIONS: SectionId[] = [
+  "profile",
+  "orders",
+  "addresses",
+  "favorites",
+  "preferences",
+  "payment",
+  "notifications",
+  "appearance",
+  "security",
+];
+
+const EMPTY_ADDRESS: AddressCreateInput = {
   label: "Home",
   recipient_name: "",
   phone: "",
   street_address: "",
-  city: "Dumaguete City",
-  state_province: "Negros Oriental",
-  postal_code: "6200",
+  barangay: "",
+  city: "",
+  state_province: "",
+  postal_code: "",
   delivery_instructions: "",
   is_default: false,
 };
 
-export default function CustomerPage() {
+const currencyFormatter = new Intl.NumberFormat("en-PH", {
+  style: "currency",
+  currency: "PHP",
+  minimumFractionDigits: 2,
+});
+
+function formatDate(dateStr: string | null | undefined, includeTime = false): string {
+  if (!dateStr) return "Not available";
+  const parsed = new Date(dateStr);
+  if (Number.isNaN(parsed.getTime())) return "Not available";
+  return parsed.toLocaleDateString("en-PH", {
+    year: "numeric",
+    month: "short",
+    day: "numeric",
+    ...(includeTime ? { hour: "2-digit", minute: "2-digit" } : {}),
+  });
+}
+
+function getReadableError(err: unknown, fallback: string): string {
+  if (err instanceof AuthApiError) return err.message;
+  if (err instanceof Error && err.message) return err.message;
+  return fallback;
+}
+
+export default function CustomerAccountPage() {
   const router = useRouter();
-  const { user: customer, isLoading, logout, refreshUser } = useAuth();
-  const [isLoggingOut, setIsLoggingOut] = useState(false);
-  const [globalError, setGlobalError] = useState("");
-  const [successMessage, setSuccessMessage] = useState("");
+  const { user, isAuthenticated, isLoading: authLoading, refreshUser, logout } = useAuth();
+  const { setThemePreference } = useTheme();
 
-  // Profile Edit State
-  const [isEditingProfile, setIsEditingProfile] = useState(false);
-  const [profileFullName, setProfileFullName] = useState("");
-  const [profilePhone, setProfilePhone] = useState("");
-  const [profileSaving, setProfileSaving] = useState(false);
-  const [profileError, setProfileError] = useState("");
-
-  // Address State
+  const [activeSection, setActiveSection] = useState<SectionId>("profile");
+  const [profile, setProfile] = useState<CustomerProfile | null>(null);
   const [addresses, setAddresses] = useState<CustomerAddress[]>([]);
-  const [loadingAddresses, setLoadingAddresses] = useState(true);
-  const [addressModalOpen, setAddressModalOpen] = useState(false);
+  const [favorites, setFavorites] = useState<FavoriteProduct[]>([]);
+  const [orders, setOrders] = useState<OrderHistory | null>(null);
+  const [ordersPage, setOrdersPage] = useState(1);
+  const [categories, setCategories] = useState<Category[]>([]);
+  const [paymentMethods, setPaymentMethods] = useState<PaymentMethod[]>([]);
+  const [dataLoaded, setDataLoaded] = useState(false);
+
+  const [feedback, setFeedback] = useState<{ type: "success" | "error"; text: string } | null>(null);
+
+  // Avatar state
+  const avatarInputRef = useRef<HTMLInputElement>(null);
+  const [pendingAvatarFile, setPendingAvatarFile] = useState<File | null>(null);
+  const [pendingAvatarPreview, setPendingAvatarPreview] = useState<string | null>(null);
+  const [avatarBusy, setAvatarBusy] = useState(false);
+
+  // Personal info state
+  const [firstName, setFirstName] = useState("");
+  const [lastName, setLastName] = useState("");
+  const [phoneInput, setPhoneInput] = useState("");
+  const [profileBusy, setProfileBusy] = useState(false);
+
+  // Email change state
+  const [newEmail, setNewEmail] = useState("");
+  const [emailPassword, setEmailPassword] = useState("");
+  const [emailBusy, setEmailBusy] = useState(false);
+
+  // Address modal state
+  const [showAddressModal, setShowAddressModal] = useState(false);
   const [editingAddress, setEditingAddress] = useState<CustomerAddress | null>(null);
-  const [addressForm, setAddressForm] = useState<AddressFormData>(initialAddressFormData);
-  const [addressSaving, setAddressSaving] = useState(false);
-  const [addressModalError, setAddressModalError] = useState("");
-  const [deletingAddressId, setDeletingAddressId] = useState<number | null>(null);
-  const [settingDefaultId, setSettingDefaultId] = useState<number | null>(null);
+  const [addressForm, setAddressForm] = useState<AddressCreateInput>(EMPTY_ADDRESS);
+  const [addressBusy, setAddressBusy] = useState(false);
 
-  // Auth Protection
+  // Preferences state
+  const [defaultOrderType, setDefaultOrderType] = useState<"dine_in" | "takeout" | "">("");
+  const [preferredPaymentCode, setPreferredPaymentCode] = useState<string>("");
+  const [dietaryPreferences, setDietaryPreferences] = useState<string[]>([]);
+  const [allergyFlags, setAllergyFlags] = useState<string[]>([]);
+  const [dislikedIngredients, setDislikedIngredients] = useState("");
+  const [preferredCategoryIds, setPreferredCategoryIds] = useState<number[]>([]);
+  const [allergyConsentGiven, setAllergyConsentGiven] = useState(false);
+  const [shareAllergyWithKitchen, setShareAllergyWithKitchen] = useState(true);
+  const [emailOrderUpdates, setEmailOrderUpdates] = useState(true);
+  const [emailPromotions, setEmailPromotions] = useState(false);
+  const [themePref, setThemePref] = useState<ThemePreference>("system");
+  const [prefsBusy, setPrefsBusy] = useState(false);
+
+  // Security state
+  const [currentPassword, setCurrentPassword] = useState("");
+  const [newPassword, setNewPassword] = useState("");
+  const [confirmPassword, setConfirmPassword] = useState("");
+  const [passwordBusy, setPasswordBusy] = useState(false);
+
+  const [deactivatePassword, setDeactivatePassword] = useState("");
+  const [deactivateConfirmed, setDeactivateConfirmed] = useState(false);
+  const [deactivateReason, setDeactivateReason] = useState("");
+  const [deactivateBusy, setDeactivateBusy] = useState(false);
+
+  const [reorderingOrderId, setReorderingOrderId] = useState<number | null>(null);
+  const [failedFavoriteImages, setFailedFavoriteImages] = useState<Set<number>>(new Set());
+
+  const syncFormStateFromProfile = useCallback(
+    (loaded: CustomerProfile) => {
+      setProfile(loaded);
+      setFirstName(loaded.first_name || "");
+      setLastName(loaded.last_name || "");
+      setPhoneInput(loaded.phone || "");
+      setNewEmail(loaded.email || "");
+      setDefaultOrderType(loaded.default_order_type || "");
+      setPreferredPaymentCode(loaded.preferred_payment_code || "");
+      setDietaryPreferences(loaded.dietary_preferences || []);
+      setAllergyFlags(loaded.allergy_flags || []);
+      setDislikedIngredients(loaded.disliked_ingredients || "");
+      setPreferredCategoryIds(loaded.preferred_category_ids || []);
+      setAllergyConsentGiven(Boolean(loaded.allergy_consent_given));
+      setShareAllergyWithKitchen(Boolean(loaded.share_allergy_with_kitchen));
+      setEmailOrderUpdates(Boolean(loaded.email_order_updates));
+      setEmailPromotions(Boolean(loaded.email_promotions));
+      setThemePref(loaded.theme_preference || "system");
+      setThemePreference(loaded.theme_preference || "system");
+    },
+    [setThemePreference],
+  );
+
   useEffect(() => {
-    if (!isLoading && !customer) {
-      router.replace("/login?next=%2Fcustomer");
-    }
-  }, [customer, isLoading, router]);
-
-  // Load Addresses on customer change
-  const reloadAddresses = useCallback(async () => {
-    if (!customer) return;
-    try {
-      const data = await getCustomerAddresses();
-      setAddresses(data);
-    } catch (err: unknown) {
-      const msg = err instanceof Error ? err.message : "Failed to load saved addresses.";
-      setGlobalError(msg);
-    }
-  }, [customer]);
-
-  useEffect(() => {
-    if (!customer) return;
+    if (typeof window === "undefined") return;
     let active = true;
-
-    (async () => {
-      try {
-        const data = await getCustomerAddresses();
-        if (active) {
-          setAddresses(data);
-        }
-      } catch (err: unknown) {
-        if (active) {
-          const msg = err instanceof Error ? err.message : "Failed to load saved addresses.";
-          setGlobalError(msg);
-        }
-      } finally {
-        if (active) {
-          setLoadingAddresses(false);
-        }
+    void Promise.resolve().then(() => {
+      if (!active) return;
+      const requested = new URLSearchParams(window.location.search).get("tab");
+      if (requested && VALID_SECTIONS.includes(requested as SectionId)) {
+        setActiveSection(requested as SectionId);
       }
-    })();
+    });
+    return () => {
+      active = false;
+    };
+  }, []);
+
+  useEffect(() => {
+    if (authLoading || !isAuthenticated) {
+      return;
+    }
+
+    let active = true;
+    void Promise.all([
+      getCustomerProfile(),
+      getCustomerAddresses(),
+      getCustomerFavorites(),
+      getOrders(1),
+      getCategories(),
+      getPaymentMethods(),
+    ])
+      .then(([loadedProfile, loadedAddresses, loadedFavorites, loadedOrders, loadedCategories, loadedPayments]) => {
+        if (!active) return;
+        syncFormStateFromProfile(loadedProfile);
+        setAddresses(loadedAddresses);
+        setFavorites(loadedFavorites);
+        setOrders(loadedOrders);
+        setCategories(loadedCategories);
+        setPaymentMethods(loadedPayments);
+      })
+      .catch((err) => {
+        if (active) {
+          setFeedback({
+            type: "error",
+            text: getReadableError(err, "Unable to load your account details right now."),
+          });
+        }
+      })
+      .finally(() => {
+        if (active) setDataLoaded(true);
+      });
 
     return () => {
       active = false;
     };
-  }, [customer]);
+  }, [authLoading, isAuthenticated, syncFormStateFromProfile]);
 
-  const handleLogout = async () => {
-    setIsLoggingOut(true);
-    setGlobalError("");
+  const pageLoading = authLoading || (isAuthenticated && !dataLoaded);
 
+  useEffect(() => {
+    return () => {
+      if (pendingAvatarPreview) {
+        URL.revokeObjectURL(pendingAvatarPreview);
+      }
+    };
+  }, [pendingAvatarPreview]);
+
+  function selectSection(section: SectionId) {
+    setActiveSection(section);
+    setFeedback(null);
+    if (typeof window !== "undefined") {
+      const url = new URL(window.location.href);
+      url.searchParams.set("tab", section);
+      window.history.replaceState(null, "", url.toString());
+    }
+  }
+
+  async function savePreferencesPayload(overrides?: Partial<{
+    preferred_payment_code: string | null;
+    default_order_type: "dine_in" | "takeout" | null;
+    dietary_preferences: string[];
+    allergy_flags: string[];
+    disliked_ingredients: string | null;
+    preferred_category_ids: number[];
+    allergy_consent_given: boolean;
+    share_allergy_with_kitchen: boolean;
+    email_order_updates: boolean;
+    email_promotions: boolean;
+    theme_preference: ThemePreference;
+  }>, successText = "Preferences saved.") {
+    setPrefsBusy(true);
+    setFeedback(null);
     try {
-      await logout();
-      router.replace("/login");
-    } catch {
-      setGlobalError("We could not sign you out. Please try again.");
-      setIsLoggingOut(false);
+      const nextAllergies = overrides?.allergy_flags ?? allergyFlags;
+      const nextDisliked =
+        overrides && "disliked_ingredients" in overrides
+          ? overrides.disliked_ingredients
+          : (dislikedIngredients.trim() || null);
+      const hasAllergyData = nextAllergies.length > 0 || Boolean(nextDisliked);
+      const consentFlag = overrides?.allergy_consent_given ?? allergyConsentGiven;
+
+      if (hasAllergyData && !consentFlag) {
+        setFeedback({
+          type: "error",
+          text: "Please check the allergy consent box before saving allergy or avoided ingredient information.",
+        });
+        return;
+      }
+
+      const updated = await updateCustomerPreferences({
+        preferred_payment_code:
+          overrides && "preferred_payment_code" in overrides
+            ? overrides.preferred_payment_code
+            : (preferredPaymentCode || null),
+        default_order_type:
+          overrides && "default_order_type" in overrides
+            ? overrides.default_order_type
+            : (defaultOrderType || null),
+        dietary_preferences: overrides?.dietary_preferences ?? dietaryPreferences,
+        allergy_flags: nextAllergies,
+        disliked_ingredients: nextDisliked,
+        preferred_category_ids: overrides?.preferred_category_ids ?? preferredCategoryIds,
+        allergy_consent_given: consentFlag,
+        share_allergy_with_kitchen:
+          overrides?.share_allergy_with_kitchen ?? shareAllergyWithKitchen,
+        email_order_updates: overrides?.email_order_updates ?? emailOrderUpdates,
+        email_promotions: overrides?.email_promotions ?? emailPromotions,
+        theme_preference: overrides?.theme_preference ?? themePref,
+      });
+      syncFormStateFromProfile(updated);
+      await refreshUser();
+      setFeedback({ type: "success", text: successText });
+    } catch (err) {
+      setFeedback({
+        type: "error",
+        text: getReadableError(err, "Unable to save preferences."),
+      });
+    } finally {
+      setPrefsBusy(false);
     }
-  };
+  }
 
-  const handleRetry = async () => {
-    setGlobalError("");
-    const refreshed = await refreshUser();
-    if (!refreshed) {
-      router.replace("/login?next=%2Fcustomer");
-    }
-  };
-
-  // Profile Edit Handlers
-  const handleStartEditProfile = () => {
-    if (!customer) return;
-    setProfileFullName(customer.full_name || "");
-    setProfilePhone(customer.phone || "");
-    setProfileError("");
-    setSuccessMessage("");
-    setIsEditingProfile(true);
-  };
-
-  const handleCancelEditProfile = () => {
-    if (!customer) return;
-    setProfileFullName(customer.full_name || "");
-    setProfilePhone(customer.phone || "");
-    setProfileError("");
-    setIsEditingProfile(false);
-  };
-
-  const handleSaveProfile = async (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!profileFullName.trim()) {
-      setProfileError("Full name is required.");
+  function handleAvatarFileSelect(event: ChangeEvent<HTMLInputElement>) {
+    const file = event.target.files?.[0];
+    if (!file) return;
+    if (!["image/jpeg", "image/png", "image/webp"].includes(file.type)) {
+      setFeedback({ type: "error", text: "Please select a JPEG, PNG, or WebP image." });
       return;
     }
-
-    setProfileSaving(true);
-    setProfileError("");
-    setSuccessMessage("");
-
-    try {
-      await updateCustomerProfile({
-        full_name: profileFullName.trim(),
-        phone: profilePhone.trim() || null,
-      });
-      await refreshUser();
-      setIsEditingProfile(false);
-      setSuccessMessage("Your profile information has been updated successfully.");
-    } catch (err: unknown) {
-      const msg = err instanceof Error ? err.message : "Failed to update profile. Please try again.";
-      setProfileError(msg);
-    } finally {
-      setProfileSaving(false);
+    if (file.size > 5 * 1024 * 1024) {
+      setFeedback({ type: "error", text: "Profile photos must be 5 MB or smaller." });
+      return;
     }
-  };
+    if (pendingAvatarPreview) URL.revokeObjectURL(pendingAvatarPreview);
+    setPendingAvatarFile(file);
+    setPendingAvatarPreview(URL.createObjectURL(file));
+    setFeedback(null);
+  }
 
-  // Address Modal Handlers
-  const handleOpenAddAddress = () => {
-    if (!customer) return;
+  function cancelPendingAvatar() {
+    if (pendingAvatarPreview) URL.revokeObjectURL(pendingAvatarPreview);
+    setPendingAvatarFile(null);
+    setPendingAvatarPreview(null);
+    if (avatarInputRef.current) avatarInputRef.current.value = "";
+  }
+
+  async function handleSaveAvatar() {
+    if (!pendingAvatarFile) return;
+    setAvatarBusy(true);
+    setFeedback(null);
+    try {
+      const updated = await uploadCustomerAvatar(pendingAvatarFile);
+      syncFormStateFromProfile(updated);
+      await refreshUser();
+      cancelPendingAvatar();
+      setFeedback({ type: "success", text: "Profile picture updated." });
+    } catch (err) {
+      setFeedback({
+        type: "error",
+        text: getReadableError(err, "Unable to upload profile picture."),
+      });
+    } finally {
+      setAvatarBusy(false);
+    }
+  }
+
+  async function handleRemoveAvatar() {
+    setAvatarBusy(true);
+    setFeedback(null);
+    try {
+      const updated = await removeCustomerAvatar();
+      syncFormStateFromProfile(updated);
+      await refreshUser();
+      cancelPendingAvatar();
+      setFeedback({ type: "success", text: "Profile picture removed." });
+    } catch (err) {
+      setFeedback({
+        type: "error",
+        text: getReadableError(err, "Unable to remove profile picture."),
+      });
+    } finally {
+      setAvatarBusy(false);
+    }
+  }
+
+  async function handleProfileSubmit(event: FormEvent) {
+    event.preventDefault();
+    setProfileBusy(true);
+    setFeedback(null);
+    try {
+      const updated = await updateCustomerProfile({
+        first_name: firstName,
+        last_name: lastName,
+        phone: phoneInput.trim() ? phoneInput.trim() : null,
+      });
+      syncFormStateFromProfile(updated);
+      await refreshUser();
+      setFeedback({ type: "success", text: "Personal information updated." });
+    } catch (err) {
+      setFeedback({
+        type: "error",
+        text: getReadableError(err, "Unable to save profile details."),
+      });
+    } finally {
+      setProfileBusy(false);
+    }
+  }
+
+  async function handleEmailSubmit(event: FormEvent) {
+    event.preventDefault();
+    setEmailBusy(true);
+    setFeedback(null);
+    try {
+      const updated = await changeCustomerEmail({
+        new_email: newEmail.trim(),
+        current_password: emailPassword,
+      });
+      syncFormStateFromProfile(updated);
+      await refreshUser();
+      setEmailPassword("");
+      setFeedback({ type: "success", text: "Your account email address has been updated." });
+    } catch (err) {
+      setFeedback({
+        type: "error",
+        text: getReadableError(err, "Unable to update your email address."),
+      });
+    } finally {
+      setEmailBusy(false);
+    }
+  }
+
+  async function loadOrdersPage(nextPage: number) {
+    try {
+      const loaded = await getOrders(nextPage);
+      setOrders(loaded);
+      setOrdersPage(nextPage);
+    } catch (err) {
+      setFeedback({
+        type: "error",
+        text: getReadableError(err, "Unable to load order history."),
+      });
+    }
+  }
+
+  async function handleReorder(orderId: number) {
+    setReorderingOrderId(orderId);
+    setFeedback(null);
+    try {
+      const result = await reorderToCart(orderId);
+      if (result.addedCount === 0) {
+        setFeedback({ type: "error", text: result.summaryMessage });
+      } else {
+        router.push("/cart");
+      }
+    } catch (err) {
+      setFeedback({
+        type: "error",
+        text: getReadableError(err, "Unable to reorder items from this order."),
+      });
+    } finally {
+      setReorderingOrderId(null);
+    }
+  }
+
+  function openAddAddress() {
     setEditingAddress(null);
     setAddressForm({
-      ...initialAddressFormData,
-      recipient_name: customer.full_name || "",
-      phone: customer.phone || "",
+      ...EMPTY_ADDRESS,
+      recipient_name: profile?.full_name || "",
+      phone: profile?.phone || "",
       is_default: addresses.length === 0,
     });
-    setAddressModalError("");
-    setAddressModalOpen(true);
-  };
+    setShowAddressModal(true);
+  }
 
-  const handleOpenEditAddress = (addr: CustomerAddress) => {
+  function openEditAddress(addr: CustomerAddress) {
     setEditingAddress(addr);
     setAddressForm({
       label: addr.label,
       recipient_name: addr.recipient_name,
       phone: addr.phone,
       street_address: addr.street_address,
+      barangay: addr.barangay || "",
       city: addr.city,
       state_province: addr.state_province || "",
       postal_code: addr.postal_code || "",
       delivery_instructions: addr.delivery_instructions || "",
       is_default: addr.is_default,
     });
-    setAddressModalError("");
-    setAddressModalOpen(true);
-  };
+    setShowAddressModal(true);
+  }
 
-  const handleCloseAddressModal = () => {
-    if (addressSaving) return;
-    setAddressModalOpen(false);
-    setEditingAddress(null);
-    setAddressModalError("");
-  };
-
-  const handleSaveAddress = async (e: React.FormEvent) => {
-    e.preventDefault();
-
-    if (!addressForm.recipient_name.trim()) {
-      setAddressModalError("Recipient name is required.");
-      return;
-    }
-    if (!addressForm.phone.trim()) {
-      setAddressModalError("Contact phone number is required.");
-      return;
-    }
-    if (!addressForm.street_address.trim()) {
-      setAddressModalError("Street address is required.");
-      return;
-    }
-    if (!addressForm.city.trim()) {
-      setAddressModalError("City is required.");
-      return;
-    }
-
-    setAddressSaving(true);
-    setAddressModalError("");
-
+  async function handleSaveAddress(event: FormEvent) {
+    event.preventDefault();
+    setAddressBusy(true);
+    setFeedback(null);
     try {
-      const payload = {
-        label: addressForm.label.trim() || "Home",
-        recipient_name: addressForm.recipient_name.trim(),
-        phone: addressForm.phone.trim(),
-        street_address: addressForm.street_address.trim(),
-        city: addressForm.city.trim(),
-        state_province: addressForm.state_province.trim() || null,
-        postal_code: addressForm.postal_code.trim() || null,
-        delivery_instructions: addressForm.delivery_instructions.trim() || null,
-        is_default: addressForm.is_default,
+      const payload: AddressCreateInput = {
+        ...addressForm,
+        barangay: addressForm.barangay?.trim() || null,
+        state_province: addressForm.state_province?.trim() || null,
+        postal_code: addressForm.postal_code?.trim() || null,
+        delivery_instructions: addressForm.delivery_instructions?.trim() || null,
       };
-
       if (editingAddress) {
         await updateCustomerAddress(editingAddress.id, payload);
-        setSuccessMessage("Address updated successfully.");
       } else {
         await createCustomerAddress(payload);
-        setSuccessMessage("New address added successfully.");
       }
-
-      await reloadAddresses();
+      const [refreshedAddresses, refreshedProfile] = await Promise.all([
+        getCustomerAddresses(),
+        getCustomerProfile(),
+      ]);
+      setAddresses(refreshedAddresses);
+      syncFormStateFromProfile(refreshedProfile);
       await refreshUser();
-      setAddressModalOpen(false);
-      setEditingAddress(null);
-    } catch (err: unknown) {
-      const msg = err instanceof Error ? err.message : "Failed to save address.";
-      setAddressModalError(msg);
+      setShowAddressModal(false);
+      setFeedback({
+        type: "success",
+        text: editingAddress ? "Address updated." : "Saved address added.",
+      });
+    } catch (err) {
+      setFeedback({
+        type: "error",
+        text: getReadableError(err, "Unable to save address."),
+      });
     } finally {
-      setAddressSaving(false);
+      setAddressBusy(false);
     }
-  };
+  }
 
-  const handleSetDefaultAddress = async (addressId: number) => {
-    setSettingDefaultId(addressId);
-    setGlobalError("");
-    setSuccessMessage("");
+  async function handleSetDefaultAddress(addressId: number) {
+    setFeedback(null);
     try {
       await setDefaultAddress(addressId);
-      await reloadAddresses();
+      const [refreshedAddresses, refreshedProfile] = await Promise.all([
+        getCustomerAddresses(),
+        getCustomerProfile(),
+      ]);
+      setAddresses(refreshedAddresses);
+      syncFormStateFromProfile(refreshedProfile);
       await refreshUser();
-      setSuccessMessage("Default delivery address updated.");
-    } catch (err: unknown) {
-      const msg = err instanceof Error ? err.message : "Failed to set default address.";
-      setGlobalError(msg);
-    } finally {
-      setSettingDefaultId(null);
+      setFeedback({ type: "success", text: "Default address updated." });
+    } catch (err) {
+      setFeedback({
+        type: "error",
+        text: getReadableError(err, "Unable to set default address."),
+      });
     }
-  };
+  }
 
-  const handleDeleteAddress = async (addressId: number) => {
-    if (!window.confirm("Are you sure you want to remove this saved address?")) {
-      return;
-    }
-
-    setDeletingAddressId(addressId);
-    setGlobalError("");
-    setSuccessMessage("");
+  async function handleDeleteAddress(addressId: number) {
+    if (!window.confirm("Remove this saved address?")) return;
+    setFeedback(null);
     try {
       await deleteCustomerAddress(addressId);
-      await reloadAddresses();
+      const [refreshedAddresses, refreshedProfile] = await Promise.all([
+        getCustomerAddresses(),
+        getCustomerProfile(),
+      ]);
+      setAddresses(refreshedAddresses);
+      syncFormStateFromProfile(refreshedProfile);
       await refreshUser();
-      setSuccessMessage("Address removed successfully.");
-    } catch (err: unknown) {
-      const msg = err instanceof Error ? err.message : "Failed to remove address.";
-      setGlobalError(msg);
-    } finally {
-      setDeletingAddressId(null);
+      setFeedback({ type: "success", text: "Saved address removed." });
+    } catch (err) {
+      setFeedback({
+        type: "error",
+        text: getReadableError(err, "Unable to delete address."),
+      });
     }
-  };
-
-  if (isLoading) {
-    return (
-      <main className={styles.page} aria-busy="true">
-        <div className={styles.backgroundDecoration} aria-hidden="true">
-          <span className={styles.decorationCircleOne} />
-          <span className={styles.decorationCircleTwo} />
-        </div>
-
-        <section className={styles.loadingCard} aria-live="polite">
-          <span className={styles.spinner} aria-hidden="true" />
-          <p>Loading your account...</p>
-        </section>
-      </main>
-    );
   }
 
-  if (!customer) {
-    return (
-      <main className={styles.page}>
-        <div className={styles.backgroundDecoration} aria-hidden="true">
-          <span className={styles.decorationCircleOne} />
-          <span className={styles.decorationCircleTwo} />
-        </div>
-
-        <section className={styles.errorCard} role="alert">
-          <p className={styles.eyebrow}>Account unavailable</p>
-          <h1>We could not load your profile.</h1>
-          <p>{globalError || "Please sign in to view your account details."}</p>
-          <div className={styles.errorActions}>
-            <button type="button" onClick={handleRetry}>
-              Try again
-            </button>
-            <Link href="/login?next=%2Fcustomer">Go to sign in</Link>
-          </div>
-        </section>
-      </main>
-    );
+  async function handleRemoveFavorite(productId: number) {
+    setFeedback(null);
+    try {
+      await removeCustomerFavorite(productId);
+      setFavorites((prev) => prev.filter((item) => item.product_id !== productId));
+      setFeedback({ type: "success", text: "Removed dish from favorites." });
+    } catch (err) {
+      setFeedback({
+        type: "error",
+        text: getReadableError(err, "Unable to remove favorite."),
+      });
+    }
   }
 
-  const initials = customer.full_name
-    .split(/\s+/)
-    .filter(Boolean)
-    .slice(0, 2)
-    .map((part) => part[0]?.toUpperCase())
-    .join("");
+  async function handlePasswordSubmit(event: FormEvent) {
+    event.preventDefault();
+    setPasswordBusy(true);
+    setFeedback(null);
+    try {
+      const res = await changeCustomerPassword({
+        current_password: currentPassword,
+        new_password: newPassword,
+        confirm_password: confirmPassword,
+      });
+      setCurrentPassword("");
+      setNewPassword("");
+      setConfirmPassword("");
+      setFeedback({ type: "success", text: res.message });
+    } catch (err) {
+      setFeedback({
+        type: "error",
+        text: getReadableError(err, "Unable to update your password."),
+      });
+    } finally {
+      setPasswordBusy(false);
+    }
+  }
+
+  async function handleDeactivateSubmit(event: FormEvent) {
+    event.preventDefault();
+    if (!deactivateConfirmed) {
+      setFeedback({
+        type: "error",
+        text: "Please check the confirmation box to deactivate your account.",
+      });
+      return;
+    }
+    setDeactivateBusy(true);
+    setFeedback(null);
+    try {
+      await deactivateCustomerAccount({
+        current_password: deactivatePassword,
+        confirm_deactivation: deactivateConfirmed,
+        reason: deactivateReason.trim() || null,
+      });
+      await refreshUser();
+      router.push("/");
+    } catch (err) {
+      setFeedback({
+        type: "error",
+        text: getReadableError(err, "Unable to deactivate account."),
+      });
+    } finally {
+      setDeactivateBusy(false);
+    }
+  }
+
+  function toggleArrayValue<T>(list: T[], value: T): T[] {
+    return list.includes(value) ? list.filter((item) => item !== value) : [...list, value];
+  }
+
+  const displayAvatar = pendingAvatarPreview || profile?.avatar_url || user?.avatar_url || null;
+  const initials = (profile?.full_name || user?.full_name || "S").charAt(0).toUpperCase();
+
+  const navItems: Array<{
+    id: SectionId;
+    label: string;
+    icon: typeof UserIcon;
+    badge?: number;
+  }> = [
+    { id: "profile", label: "My Profile", icon: UserIcon },
+    { id: "orders", label: "My Orders", icon: ReceiptIcon, badge: orders?.total },
+    { id: "addresses", label: "Saved Addresses", icon: MapPinIcon, badge: addresses.length },
+    { id: "favorites", label: "Favorites", icon: HeartIcon, badge: favorites.length },
+    { id: "preferences", label: "Food & Dining", icon: SlidersIcon },
+    { id: "payment", label: "Payment Method", icon: CreditCardIcon },
+    { id: "notifications", label: "Notifications", icon: BellIcon },
+    { id: "appearance", label: "Appearance", icon: SunIcon },
+    { id: "security", label: "Security & Account", icon: LockIcon },
+  ];
 
   return (
-    <main className={styles.page}>
-      <div className={styles.backgroundDecoration} aria-hidden="true">
-        <span className={styles.decorationCircleOne} />
-        <span className={styles.decorationCircleTwo} />
-      </div>
+    <div className={styles.page}>
+      <Header />
 
-      <section className={styles.container} aria-labelledby="account-title">
-        <header className={styles.header}>
-          <Link href="/" className={styles.brand} aria-label="SavoryBites home">
-            <span className={styles.brandMark} aria-hidden="true">S</span>
-            <span>
-              <strong>SavoryBites</strong>
-              <small>Freshly made. Simply delicious.</small>
-            </span>
-          </Link>
-
-          <div className={styles.headerLinks}>
-            <Link href="/orders" className={styles.menuLink}>
-              Order History
-            </Link>
-            <Link href="/menu" className={styles.menuLink}>
-              Browse Menu
-            </Link>
-            <button
-              type="button"
-              className={styles.logoutButton}
-              onClick={handleLogout}
-              disabled={isLoggingOut}
-            >
-              {isLoggingOut ? "Signing out..." : "Sign out"}
-            </button>
+      <main className={styles.main}>
+        {authLoading || pageLoading ? (
+          <div className={styles.loadingCard} aria-live="polite">
+            <p>Loading your SavoryBites account...</p>
           </div>
-        </header>
-
-        <div className={styles.intro}>
-          <p className={styles.eyebrow}>Customer account</p>
-          <h1 id="account-title">
-            Welcome back, {customer.full_name.split(" ")[0]}.
-          </h1>
-          <p>Manage your personal profile details and saved delivery addresses.</p>
-        </div>
-
-        {globalError && (
-          <p className={styles.inlineError} role="alert">
-            {globalError}
-          </p>
-        )}
-
-        {successMessage && (
-          <div className={styles.alertSuccess} role="status">
-            {successMessage}
-          </div>
-        )}
-
-        {/* Profile Grid */}
-        <div className={styles.accountGrid}>
-          <section className={styles.identityCard} aria-label="Profile overview">
-            <span className={styles.avatar} aria-hidden="true">{initials || "C"}</span>
-            <p className={styles.status}><span aria-hidden="true" /> Authenticated session</p>
-            <h2>{customer.full_name}</h2>
-            <p>{customer.email || "Email address not provided"}</p>
-            <div className={styles.accountId}>
-              <span>Customer ID</span>
-              <strong>#{customer.customer_id}</strong>
+        ) : !isAuthenticated ? (
+          <section className={styles.authGateCard}>
+            <p className={styles.eyebrow}>CUSTOMER ACCOUNT</p>
+            <h1 className={styles.pageTitle}>Sign in to manage your profile</h1>
+            <p className={styles.pageSubtitle}>
+              Access your saved addresses, favorites, food allergy preferences, order history, and account settings.
+            </p>
+            <div className={styles.formActions} style={{ justifyContent: "center", marginTop: 24 }}>
+              <Link href="/login?next=/customer" className={styles.primaryButton}>
+                Sign in
+              </Link>
+              <Link href="/register" className={styles.secondaryButton}>
+                Create account
+              </Link>
             </div>
           </section>
-
-          <section className={styles.detailsCard} aria-labelledby="details-title">
-            <div className={styles.detailsHeader}>
+        ) : (
+          <>
+            <header className={styles.pageHeader}>
               <div>
-                <p className={styles.eyebrow}>Account information</p>
-                <h2 id="details-title">Your details</h2>
+                <p className={styles.eyebrow}>SAVORYBITES ACCOUNT</p>
+                <h1 className={styles.pageTitle}>Welcome back, {profile?.first_name || "Guest"}</h1>
+                <p className={styles.pageSubtitle}>
+                  Manage your dining details, saved addresses, food preferences, and order history.
+                </p>
               </div>
-              {!isEditingProfile && (
+              <div className={styles.headerActions}>
+                <Link href="/menu" className={styles.secondaryButton}>
+                  Browse menu
+                </Link>
+                <Link href="/start-order" className={styles.primaryButton}>
+                  Start an order
+                </Link>
+              </div>
+            </header>
+
+            {feedback && (
+              <div
+                className={`${styles.noticeBanner} ${
+                  feedback.type === "success" ? styles.noticeSuccess : styles.noticeError
+                }`}
+                role="status"
+              >
+                <span>{feedback.text}</span>
                 <button
                   type="button"
-                  className={styles.editButton}
-                  onClick={handleStartEditProfile}
-                  aria-label="Edit personal details"
+                  className={styles.noticeDismiss}
+                  onClick={() => setFeedback(null)}
+                  aria-label="Dismiss message"
                 >
-                  <EditIcon size={13} style={{ display: "inline", marginRight: "5px", verticalAlign: "-2px" }} />
-                  <span>Edit details</span>
+                  ✕
                 </button>
-              )}
-            </div>
+              </div>
+            )}
 
-            {isEditingProfile ? (
-              <form className={styles.profileForm} onSubmit={handleSaveProfile} noValidate>
-                {profileError && (
-                  <p className={styles.inlineError} role="alert">
-                    {profileError}
-                  </p>
+            <div className={styles.layoutGrid}>
+              <aside className={styles.sidebarColumn}>
+                <div className={styles.profileSummaryCard}>
+                  <div className={styles.avatarWrap}>
+                    <div className={styles.avatarCircle}>
+                      {displayAvatar ? (
+                        <Image
+                          src={displayAvatar}
+                          alt={`${profile?.full_name || "Customer"} avatar`}
+                          width={84}
+                          height={84}
+                          unoptimized
+                          className={styles.avatarImage}
+                        />
+                      ) : (
+                        initials
+                      )}
+                    </div>
+                  </div>
+
+                  <input
+                    ref={avatarInputRef}
+                    type="file"
+                    accept="image/jpeg,image/png,image/webp"
+                    onChange={handleAvatarFileSelect}
+                    className={styles.fileInputHidden}
+                    aria-label="Choose profile picture"
+                  />
+
+                  <div className={styles.avatarActionsRow}>
+                    {pendingAvatarFile ? (
+                      <>
+                        <button
+                          type="button"
+                          className={`${styles.primaryButton} ${styles.smallButton}`}
+                          onClick={() => void handleSaveAvatar()}
+                          disabled={avatarBusy}
+                        >
+                          {avatarBusy ? "Saving..." : "Save Photo"}
+                        </button>
+                        <button
+                          type="button"
+                          className={`${styles.secondaryButton} ${styles.smallButton}`}
+                          onClick={cancelPendingAvatar}
+                          disabled={avatarBusy}
+                        >
+                          Cancel
+                        </button>
+                      </>
+                    ) : (
+                      <>
+                        <button
+                          type="button"
+                          className={`${styles.secondaryButton} ${styles.smallButton}`}
+                          onClick={() => avatarInputRef.current?.click()}
+                          disabled={avatarBusy}
+                        >
+                          <CameraIcon size={14} />
+                          <span>{profile?.avatar_url ? "Replace Photo" : "Upload Photo"}</span>
+                        </button>
+                        {profile?.avatar_url && (
+                          <button
+                            type="button"
+                            className={`${styles.dangerOutlineButton} ${styles.smallButton}`}
+                            onClick={() => void handleRemoveAvatar()}
+                            disabled={avatarBusy}
+                          >
+                            Remove
+                          </button>
+                        )}
+                      </>
+                    )}
+                  </div>
+
+                  <h2 className={styles.summaryName}>{profile?.full_name}</h2>
+                  <p className={styles.summaryEmail}>{profile?.email || "No email on file"}</p>
+                  <div className={styles.memberStatus}>
+                    <span className={styles.memberStatusDot} />
+                    <span>{profile?.is_active ? "Active Member" : "Inactive"}</span>
+                  </div>
+                  <div className={styles.memberSince}>
+                    <span>Member since</span>
+                    <strong>{formatDate(profile?.created_at)}</strong>
+                  </div>
+                </div>
+
+                <nav className={styles.sectionNavCard} aria-label="Account sections">
+                  <div className={styles.sectionNavList}>
+                    {navItems.map((item) => {
+                      const Icon = item.icon;
+                      const isActive = activeSection === item.id;
+                      return (
+                        <button
+                          key={item.id}
+                          type="button"
+                          className={`${styles.sectionNavButton} ${
+                            isActive ? styles.sectionNavButtonActive : ""
+                          }`}
+                          onClick={() => selectSection(item.id)}
+                          aria-current={isActive ? "page" : undefined}
+                        >
+                          <Icon size={16} />
+                          <span>{item.label}</span>
+                          {typeof item.badge === "number" && item.badge > 0 && (
+                            <span className={styles.navBadge}>{item.badge}</span>
+                          )}
+                        </button>
+                      );
+                    })}
+                  </div>
+                </nav>
+              </aside>
+
+              <section className={styles.panelStack} aria-live="polite">
+                {activeSection === "profile" && (
+                  <>
+                    <div className={styles.panelCard}>
+                      <div className={styles.panelHeader}>
+                        <div>
+                          <h2>Personal Information</h2>
+                          <p>Used to greet you and prefill takeout or table orders at checkout.</p>
+                        </div>
+                      </div>
+
+                      <div className={styles.metricsGrid}>
+                        <div className={styles.metricBox}>
+                          <span className={styles.metricLabel}>Orders</span>
+                          <span className={styles.metricValue}>{orders?.total ?? 0}</span>
+                        </div>
+                        <div className={styles.metricBox}>
+                          <span className={styles.metricLabel}>Favorites</span>
+                          <span className={styles.metricValue}>{favorites.length}</span>
+                        </div>
+                        <div className={styles.metricBox}>
+                          <span className={styles.metricLabel}>Addresses</span>
+                          <span className={styles.metricValue}>{addresses.length}</span>
+                        </div>
+                        <div className={styles.metricBox}>
+                          <span className={styles.metricLabel}>Dining Mode</span>
+                          <span className={styles.metricValue} style={{ fontSize: 16 }}>
+                            {profile?.default_order_type === "dine_in"
+                              ? "Dine-in"
+                              : profile?.default_order_type === "takeout"
+                                ? "Takeout"
+                                : "Ask me"}
+                          </span>
+                        </div>
+                      </div>
+
+                      <form className={styles.formStack} onSubmit={(e) => void handleProfileSubmit(e)}>
+                        <div className={styles.fieldRow}>
+                          <div className={styles.formGroup}>
+                            <label htmlFor="profile-first-name">First Name</label>
+                            <input
+                              id="profile-first-name"
+                              className={styles.input}
+                              type="text"
+                              required
+                              maxLength={60}
+                              value={firstName}
+                              onChange={(e) => setFirstName(e.target.value)}
+                            />
+                          </div>
+                          <div className={styles.formGroup}>
+                            <label htmlFor="profile-last-name">Last Name</label>
+                            <input
+                              id="profile-last-name"
+                              className={styles.input}
+                              type="text"
+                              maxLength={60}
+                              value={lastName}
+                              onChange={(e) => setLastName(e.target.value)}
+                            />
+                          </div>
+                        </div>
+
+                        <div className={styles.formGroup}>
+                          <label htmlFor="profile-phone">Philippine Mobile Number</label>
+                          <input
+                            id="profile-phone"
+                            className={styles.input}
+                            type="tel"
+                            placeholder="09171234567"
+                            maxLength={20}
+                            value={phoneInput}
+                            onChange={(e) => setPhoneInput(e.target.value)}
+                          />
+                          <span className={styles.helperText}>
+                            Format: 09XXXXXXXXX or +639XXXXXXXXX. Used for order contact updates.
+                          </span>
+                        </div>
+
+                        <div className={styles.formActions}>
+                          <button type="submit" className={styles.primaryButton} disabled={profileBusy}>
+                            {profileBusy ? "Saving..." : "Save Personal Details"}
+                          </button>
+                        </div>
+                      </form>
+                    </div>
+
+                    <div className={styles.panelCard}>
+                      <div className={styles.panelHeader}>
+                        <div>
+                          <h2>Contact Email Address</h2>
+                          <p>Changing your login email requires verifying your current password.</p>
+                        </div>
+                      </div>
+                      <form className={styles.formStack} onSubmit={(e) => void handleEmailSubmit(e)}>
+                        <div className={styles.fieldRow}>
+                          <div className={styles.formGroup}>
+                            <label htmlFor="profile-new-email">Email Address</label>
+                            <input
+                              id="profile-new-email"
+                              className={styles.input}
+                              type="email"
+                              required
+                              value={newEmail}
+                              onChange={(e) => setNewEmail(e.target.value)}
+                            />
+                          </div>
+                          <div className={styles.formGroup}>
+                            <label htmlFor="profile-email-password">Current Password</label>
+                            <input
+                              id="profile-email-password"
+                              className={styles.input}
+                              type="password"
+                              required
+                              value={emailPassword}
+                              onChange={(e) => setEmailPassword(e.target.value)}
+                              placeholder="Verify with current password"
+                            />
+                          </div>
+                        </div>
+                        <div className={styles.formActions}>
+                          <button type="submit" className={styles.secondaryButton} disabled={emailBusy}>
+                            {emailBusy ? "Updating..." : "Update Email Address"}
+                          </button>
+                        </div>
+                      </form>
+                    </div>
+                  </>
                 )}
 
-                <div className={styles.formGroup}>
-                  <label htmlFor="profile-fullname">Full Name *</label>
-                  <input
-                    id="profile-fullname"
-                    type="text"
-                    required
-                    className={styles.input}
-                    value={profileFullName}
-                    onChange={(e) => setProfileFullName(e.target.value)}
-                    placeholder="e.g. Maria Santos"
-                  />
-                </div>
+                {activeSection === "orders" && (
+                  <div className={styles.panelCard}>
+                    <div className={styles.panelHeader}>
+                      <div>
+                        <h2>Order History</h2>
+                        <p>Review past orders, open live status trackers, or reorder validated dishes to your cart.</p>
+                      </div>
+                      <Link href="/orders" className={styles.secondaryButton}>
+                        Full orders view
+                      </Link>
+                    </div>
 
-                <div className={styles.formGroup}>
-                  <label htmlFor="profile-email">Email Address</label>
-                  <input
-                    id="profile-email"
-                    type="email"
-                    disabled
-                    readOnly
-                    className={`${styles.input} ${styles.inputDisabled}`}
-                    value={customer.email ?? ""}
-                  />
-                  <span className={styles.helperText}>
-                    Registered email address cannot be changed directly.
-                  </span>
-                </div>
+                    {!orders || orders.items.length === 0 ? (
+                      <div className={styles.emptyState}>
+                        <p>You have not placed any orders with SavoryBites yet.</p>
+                        <Link href="/menu" className={styles.primaryButton} style={{ marginTop: 12 }}>
+                          Explore the menu
+                        </Link>
+                      </div>
+                    ) : (
+                      <>
+                        <div className={styles.ordersList}>
+                          {orders.items.map((order) => (
+                            <div key={order.id} className={styles.orderRow}>
+                              <div>
+                                <div className={styles.orderMetaTop}>
+                                  <span className={styles.orderNumber}>Order #{order.order_number}</span>
+                                  <span className={`${styles.statusPill} ${styles[`status_${order.status}`] || ""}`}>
+                                    {order.status}
+                                  </span>
+                                </div>
+                                <p className={styles.orderSub}>
+                                  {formatDate(order.ordered_at, true)} ·{" "}
+                                  {order.order_type === "dine_in"
+                                    ? `Dine-in${order.table_number ? ` (Table ${order.table_number})` : ""}`
+                                    : "Takeout"}
+                                  {order.payment_method_label ? ` · ${order.payment_method_label}` : ""} ·{" "}
+                                  {order.item_count} item{order.item_count === 1 ? "" : "s"}
+                                </p>
+                              </div>
+                              <div className={styles.orderRight}>
+                                <span className={styles.orderTotal}>
+                                  {currencyFormatter.format(order.total)}
+                                </span>
+                                <Link
+                                  href={`/order-confirmation/${order.id}`}
+                                  className={`${styles.secondaryButton} ${styles.smallButton}`}
+                                >
+                                  Track / Receipt
+                                </Link>
+                                <button
+                                  type="button"
+                                  className={`${styles.primaryButton} ${styles.smallButton}`}
+                                  onClick={() => void handleReorder(order.id)}
+                                  disabled={reorderingOrderId === order.id}
+                                >
+                                  <RefreshIcon size={13} />
+                                  <span>{reorderingOrderId === order.id ? "Checking..." : "Order Again"}</span>
+                                </button>
+                              </div>
+                            </div>
+                          ))}
+                        </div>
 
-                <div className={styles.formGroup}>
-                  <label htmlFor="profile-phone">Mobile Number</label>
-                  <input
-                    id="profile-phone"
-                    type="tel"
-                    className={styles.input}
-                    value={profilePhone}
-                    onChange={(e) => setProfilePhone(e.target.value)}
-                    placeholder="09171234567 or +639171234567"
-                  />
-                  <span className={styles.helperText}>
-                    Standard 11-digit Philippine mobile format (e.g. 09171234567).
-                  </span>
-                </div>
-
-                <div className={styles.formActions}>
-                  <button
-                    type="button"
-                    className={styles.secondaryButton}
-                    onClick={handleCancelEditProfile}
-                    disabled={profileSaving}
-                  >
-                    Cancel
-                  </button>
-                  <button
-                    type="submit"
-                    className={styles.primaryButton}
-                    disabled={profileSaving}
-                  >
-                    {profileSaving ? "Saving..." : "Save changes"}
-                  </button>
-                </div>
-              </form>
-            ) : (
-              <dl className={styles.detailsList}>
-                <div><dt>Full name</dt><dd>{customer.full_name}</dd></div>
-                <div><dt>Email address</dt><dd>{customer.email || "Not provided"}</dd></div>
-                <div><dt>Mobile number</dt><dd>{customer.phone || "Not provided"}</dd></div>
-                <div><dt>Default Address</dt><dd>{customer.address || "None set"}</dd></div>
-              </dl>
-            )}
-          </section>
-        </div>
-
-        {/* Saved Addresses Section */}
-        <section className={styles.addressesSection} aria-labelledby="addresses-title">
-          <div className={styles.addressesHeader}>
-            <div>
-              <p className={styles.eyebrow}>Delivery destinations</p>
-              <h2 id="addresses-title">Saved Addresses</h2>
-            </div>
-            <button
-              type="button"
-              className={styles.primaryButton}
-              onClick={handleOpenAddAddress}
-            >
-              <PlusIcon size={14} style={{ display: "inline", marginRight: "5px", verticalAlign: "-2px" }} />
-              <span>Add New Address</span>
-            </button>
-          </div>
-
-          {loadingAddresses ? (
-            <p className={styles.helperText}>Loading saved addresses...</p>
-          ) : addresses.length === 0 ? (
-            <div className={styles.emptyAddresses}>
-              <p>You don&apos;t have any saved delivery addresses yet.</p>
-              <button
-                type="button"
-                className={styles.secondaryButton}
-                onClick={handleOpenAddAddress}
-              >
-                Add your first address
-              </button>
-            </div>
-          ) : (
-            <div className={styles.addressGrid}>
-              {addresses.map((addr) => (
-                <article
-                  key={addr.id}
-                  className={`${styles.addressCard} ${addr.is_default ? styles.addressCardDefault : ""}`}
-                >
-                  <div>
-                    <div className={styles.addressCardTop}>
-                      <div className={styles.addressBadges}>
-                        <span className={styles.labelBadge}>{addr.label}</span>
-                        {addr.is_default && (
-                          <span className={styles.defaultBadge}>
-                            <CheckIcon size={11} style={{ display: "inline", marginRight: "3px", verticalAlign: "-1px" }} />
-                            <span>Default</span>
-                          </span>
+                        {orders.total > orders.page_size && (
+                          <div className={styles.paginationRow}>
+                            <button
+                              type="button"
+                              className={styles.secondaryButton}
+                              disabled={ordersPage <= 1}
+                              onClick={() => void loadOrdersPage(ordersPage - 1)}
+                            >
+                              Previous
+                            </button>
+                            <span className={styles.helperText}>
+                              Page {orders.page} of {Math.ceil(orders.total / orders.page_size)}
+                            </span>
+                            <button
+                              type="button"
+                              className={styles.secondaryButton}
+                              disabled={ordersPage * orders.page_size >= orders.total}
+                              onClick={() => void loadOrdersPage(ordersPage + 1)}
+                            >
+                              Next
+                            </button>
+                          </div>
                         )}
+                      </>
+                    )}
+                  </div>
+                )}
+
+                {activeSection === "addresses" && (
+                  <div className={styles.panelCard}>
+                    <div className={styles.panelHeader}>
+                      <div>
+                        <h2>Saved Addresses</h2>
+                        <p>Used as contact and reference snapshots during checkout.</p>
+                      </div>
+                      <button type="button" className={styles.primaryButton} onClick={openAddAddress}>
+                        <PlusIcon size={15} />
+                        <span>Add New Address</span>
+                      </button>
+                    </div>
+
+                    <div className={styles.infoCallout} style={{ marginBottom: 18 }}>
+                      <InfoIcon size={18} style={{ flexShrink: 0, marginTop: 2 }} />
+                      <div>
+                        SavoryBites currently fulfills orders for <strong>Dine-In (Table Service)</strong> and{" "}
+                        <strong>Counter Takeout</strong>. Selecting a saved address at checkout saves your contact and barangay reference securely on that order.
                       </div>
                     </div>
 
-                    <h3 className={styles.recipientName}>{addr.recipient_name}</h3>
-                    <p className={styles.addressLine}>{addr.street_address}</p>
-                    <p className={styles.addressLine}>
-                      {[addr.city, addr.state_province, addr.postal_code].filter(Boolean).join(", ")}
-                    </p>
-                    <p className={styles.addressPhone}>Phone: {addr.phone}</p>
-                    {addr.delivery_instructions && (
-                      <p className={styles.deliveryNote}>
-                        Note: {addr.delivery_instructions}
-                      </p>
+                    {addresses.length === 0 ? (
+                      <div className={styles.emptyState}>
+                        <p>No saved addresses yet. Add your home or workplace address for faster checkout.</p>
+                      </div>
+                    ) : (
+                      <div className={styles.addressGrid}>
+                        {addresses.map((addr) => (
+                          <div
+                            key={addr.id}
+                            className={`${styles.addressCard} ${addr.is_default ? styles.addressCardDefault : ""}`}
+                          >
+                            <div>
+                              <div className={styles.badgeRow}>
+                                {addr.is_default && (
+                                  <span className={`${styles.badge} ${styles.badgeDefault}`}>Default</span>
+                                )}
+                                <span
+                                  className={`${styles.badge} ${
+                                    addr.is_within_service_area ? styles.badgeGreen : styles.badgeNeutral
+                                  }`}
+                                >
+                                  {addr.is_within_service_area
+                                    ? "Within Local Area"
+                                    : "Outside Local Zone"}
+                                </span>
+                              </div>
+                              <h3 className={styles.addressTitle}>{addr.label}</h3>
+                              <p className={styles.addressMeta}>
+                                <strong>{addr.recipient_name}</strong> · {addr.phone}
+                              </p>
+                              <p className={styles.addressMeta}>
+                                {addr.street_address}
+                                {addr.barangay ? `, Brgy. ${addr.barangay}` : ""}
+                              </p>
+                              <p className={styles.addressMeta}>
+                                {addr.city}
+                                {addr.state_province ? `, ${addr.state_province}` : ""}
+                                {addr.postal_code ? ` ${addr.postal_code}` : ""}
+                              </p>
+                              {addr.delivery_instructions && (
+                                <p className={styles.helperText} style={{ marginTop: 6 }}>
+                                  Note: {addr.delivery_instructions}
+                                </p>
+                              )}
+                            </div>
+
+                            <div className={styles.addressActions}>
+                              {!addr.is_default && (
+                                <button
+                                  type="button"
+                                  className={`${styles.secondaryButton} ${styles.smallButton}`}
+                                  onClick={() => void handleSetDefaultAddress(addr.id)}
+                                >
+                                  Set Default
+                                </button>
+                              )}
+                              <button
+                                type="button"
+                                className={`${styles.secondaryButton} ${styles.smallButton}`}
+                                onClick={() => openEditAddress(addr)}
+                              >
+                                Edit
+                              </button>
+                              <button
+                                type="button"
+                                className={`${styles.dangerOutlineButton} ${styles.smallButton}`}
+                                onClick={() => void handleDeleteAddress(addr.id)}
+                              >
+                                <TrashIcon size={13} />
+                              </button>
+                            </div>
+                          </div>
+                        ))}
+                      </div>
                     )}
                   </div>
+                )}
 
-                  <div className={styles.addressActions}>
-                    {!addr.is_default && (
+                {activeSection === "favorites" && (
+                  <div className={styles.panelCard}>
+                    <div className={styles.panelHeader}>
+                      <div>
+                        <h2>Favorite Dishes</h2>
+                        <p>Live availability and current menu prices for dishes you love.</p>
+                      </div>
+                      <Link href="/menu" className={styles.secondaryButton}>
+                        Discover more dishes
+                      </Link>
+                    </div>
+
+                    {favorites.length === 0 ? (
+                      <div className={styles.emptyState}>
+                        <p>Tap the heart icon on any menu dish to save it to your favorites.</p>
+                        <Link href="/menu" className={styles.primaryButton} style={{ marginTop: 12 }}>
+                          Browse Menu
+                        </Link>
+                      </div>
+                    ) : (
+                      <div className={styles.favoritesGrid}>
+                        {favorites.map(({ product }) => {
+                          const conflicts = detectDishConflicts(product, profile);
+                          return (
+                            <div key={product.id} className={styles.favoriteCard}>
+                              <div className={styles.favoriteThumb}>
+                                {product.image_url && !failedFavoriteImages.has(product.id) ? (
+                                  <Image
+                                    src={product.image_url}
+                                    alt={product.name}
+                                    fill
+                                    sizes="76px"
+                                    style={{ objectFit: "cover" }}
+                                    onError={() => {
+                                      setFailedFavoriteImages((prev) => new Set(prev).add(product.id));
+                                    }}
+                                  />
+                                ) : (
+                                  product.name.slice(0, 1)
+                                )}
+                              </div>
+                              <div className={styles.favoriteBody}>
+                                <h3>{product.name}</h3>
+                                <span className={styles.helperText}>{product.category.name}</span>
+                                <span className={styles.favoritePrice}>
+                                  {currencyFormatter.format(product.price)}
+                                </span>
+                                <AllergyConflictNotice conflicts={conflicts} compact />
+                                <div className={styles.formActions} style={{ justifyContent: "flex-start", marginTop: "auto", paddingTop: 8 }}>
+                                  {product.is_available ? (
+                                    <Link
+                                      href={`/menu/${product.id}`}
+                                      className={`${styles.primaryButton} ${styles.smallButton}`}
+                                    >
+                                      Order Dish
+                                    </Link>
+                                  ) : (
+                                    <span className={`${styles.badge} ${styles.badgeNeutral}`}>
+                                      Currently Unavailable
+                                    </span>
+                                  )}
+                                  <button
+                                    type="button"
+                                    className={`${styles.dangerOutlineButton} ${styles.smallButton}`}
+                                    onClick={() => void handleRemoveFavorite(product.id)}
+                                  >
+                                    Remove
+                                  </button>
+                                </div>
+                              </div>
+                            </div>
+                          );
+                        })}
+                      </div>
+                    )}
+                  </div>
+                )}
+
+                {activeSection === "preferences" && (
+                  <div className={styles.panelCard}>
+                    <div className={styles.panelHeader}>
+                      <div>
+                        <h2>Food &amp; Dining Preferences</h2>
+                        <p>Personalize your default dining mode, dietary tags, and optional allergy advisories.</p>
+                      </div>
+                    </div>
+
+                    <div className={styles.safetyCallout} style={{ marginBottom: 20 }}>
+                      <AlertTriangleIcon size={20} style={{ flexShrink: 0, marginTop: 2 }} />
+                      <div>
+                        <strong>Allergy &amp; Cross-Contact Disclosure</strong>
+                        <p style={{ margin: "4px 0 0" }}>
+                          SavoryBites prepares food in a shared commercial kitchen. Menu warnings are advisory only and never guarantee an allergen-free dish. If you have a severe allergy, please speak directly with restaurant staff before placing your order.
+                        </p>
+                      </div>
+                    </div>
+
+                    <div className={styles.formStack}>
+                      <div className={styles.formGroup}>
+                        <label htmlFor="default-order-type">Default Dining Mode</label>
+                        <select
+                          id="default-order-type"
+                          className={styles.select}
+                          value={defaultOrderType}
+                          onChange={(e) =>
+                            setDefaultOrderType(e.target.value as "dine_in" | "takeout" | "")
+                          }
+                        >
+                          <option value="">Ask me each time</option>
+                          <option value="dine_in">Dine-in (Table Service)</option>
+                          <option value="takeout">Takeout (Counter Pickup)</option>
+                        </select>
+                      </div>
+
+                      <div className={styles.formGroup}>
+                        <label>Dietary Preferences</label>
+                        <div className={styles.chipsWrap}>
+                          {DIETARY_PREFERENCE_OPTIONS.map((opt) => {
+                            const selected = dietaryPreferences.includes(opt.code);
+                            return (
+                              <button
+                                key={opt.code}
+                                type="button"
+                                className={`${styles.choiceChip} ${
+                                  selected ? styles.choiceChipSelected : ""
+                                }`}
+                                aria-pressed={selected}
+                                onClick={() =>
+                                  setDietaryPreferences((prev) => toggleArrayValue(prev, opt.code))
+                                }
+                              >
+                                {opt.label}
+                              </button>
+                            );
+                          })}
+                        </div>
+                      </div>
+
+                      {categories.length > 0 && (
+                        <div className={styles.formGroup}>
+                          <label>Favorite Menu Categories</label>
+                          <div className={styles.chipsWrap}>
+                            {categories.map((cat) => {
+                              const selected = preferredCategoryIds.includes(cat.id);
+                              return (
+                                <button
+                                  key={cat.id}
+                                  type="button"
+                                  className={`${styles.choiceChip} ${
+                                    selected ? styles.choiceChipSelected : ""
+                                  }`}
+                                  aria-pressed={selected}
+                                  onClick={() =>
+                                    setPreferredCategoryIds((prev) => toggleArrayValue(prev, cat.id))
+                                  }
+                                >
+                                  {cat.name}
+                                </button>
+                              );
+                            })}
+                          </div>
+                        </div>
+                      )}
+
+                      <div className={styles.formGroup}>
+                        <label>Food Allergens</label>
+                        <div className={styles.chipsWrap}>
+                          {ALLERGEN_OPTIONS.map((opt) => {
+                            const selected = allergyFlags.includes(opt.code);
+                            return (
+                              <button
+                                key={opt.code}
+                                type="button"
+                                className={`${styles.choiceChip} ${
+                                  selected ? styles.choiceChipSelected : ""
+                                }`}
+                                aria-pressed={selected}
+                                onClick={() =>
+                                  setAllergyFlags((prev) => toggleArrayValue(prev, opt.code))
+                                }
+                              >
+                                {opt.label}
+                              </button>
+                            );
+                          })}
+                        </div>
+                      </div>
+
+                      <div className={styles.formGroup}>
+                        <label htmlFor="disliked-ingredients">Avoided or Disliked Ingredients</label>
+                        <input
+                          id="disliked-ingredients"
+                          className={styles.input}
+                          type="text"
+                          maxLength={500}
+                          placeholder="e.g., cilantro, onion, mayonnaise"
+                          value={dislikedIngredients}
+                          onChange={(e) => setDislikedIngredients(e.target.value)}
+                        />
+                        <span className={styles.helperText}>Separate multiple ingredients with commas.</span>
+                      </div>
+
+                      <label className={styles.toggleRow}>
+                        <input
+                          type="checkbox"
+                          checked={allergyConsentGiven}
+                          onChange={(e) => setAllergyConsentGiven(e.target.checked)}
+                        />
+                        <span className={styles.toggleCopy}>
+                          <strong>Explicit Allergy Data Consent</strong>
+                          <span>
+                            I consent to SavoryBites storing my food allergy and ingredient restriction details on my profile for menu advisories.
+                          </span>
+                        </span>
+                      </label>
+
+                      <label className={styles.toggleRow}>
+                        <input
+                          type="checkbox"
+                          checked={shareAllergyWithKitchen}
+                          onChange={(e) => setShareAllergyWithKitchen(e.target.checked)}
+                        />
+                        <span className={styles.toggleCopy}>
+                          <strong>Attach Allergy Note to Kitchen Orders</strong>
+                          <span>
+                            When enabled, your consented allergen note can be included on checkout orders and shown to kitchen staff on the Kitchen Display System without exposing other private profile fields.
+                          </span>
+                        </span>
+                      </label>
+
+                      <div className={styles.formActions}>
+                        <button
+                          type="button"
+                          className={styles.primaryButton}
+                          disabled={prefsBusy}
+                          onClick={() => void savePreferencesPayload(undefined, "Food and dining preferences saved.")}
+                        >
+                          {prefsBusy ? "Saving..." : "Save Dining Preferences"}
+                        </button>
+                      </div>
+                    </div>
+                  </div>
+                )}
+
+                {activeSection === "payment" && (
+                  <div className={styles.panelCard}>
+                    <div className={styles.panelHeader}>
+                      <div>
+                        <h2>Preferred Payment Method</h2>
+                        <p>Choose your default payment option for faster selection at checkout.</p>
+                      </div>
+                    </div>
+
+                    <div className={styles.infoCallout} style={{ marginBottom: 18 }}>
+                      <InfoIcon size={18} style={{ flexShrink: 0, marginTop: 2 }} />
+                      <div>
+                        SavoryBites does not collect or store raw credit/debit card numbers in your profile. Your preference simply pre-selects an active restaurant payment method on the payment step.
+                      </div>
+                    </div>
+
+                    <div className={styles.formStack}>
+                      <label className={styles.toggleRow}>
+                        <input
+                          type="radio"
+                          name="preferred_payment"
+                          checked={preferredPaymentCode === ""}
+                          onChange={() => setPreferredPaymentCode("")}
+                        />
+                        <span className={styles.toggleCopy}>
+                          <strong>Ask me at checkout</strong>
+                          <span>Do not preselect a payment method automatically.</span>
+                        </span>
+                      </label>
+
+                      {paymentMethods.map((method) => (
+                        <label key={method.id} className={styles.toggleRow}>
+                          <input
+                            type="radio"
+                            name="preferred_payment"
+                            checked={preferredPaymentCode === method.code}
+                            onChange={() => setPreferredPaymentCode(method.code)}
+                          />
+                          <span className={styles.toggleCopy}>
+                            <strong>{method.label}</strong>
+                            <span>{method.description || "Available restaurant payment option."}</span>
+                          </span>
+                        </label>
+                      ))}
+
+                      <div className={styles.formActions}>
+                        <button
+                          type="button"
+                          className={styles.primaryButton}
+                          disabled={prefsBusy}
+                          onClick={() =>
+                            void savePreferencesPayload(
+                              { preferred_payment_code: preferredPaymentCode || null },
+                              "Preferred payment method saved.",
+                            )
+                          }
+                        >
+                          {prefsBusy ? "Saving..." : "Save Payment Preference"}
+                        </button>
+                      </div>
+                    </div>
+                  </div>
+                )}
+
+                {activeSection === "notifications" && (
+                  <div className={styles.panelCard}>
+                    <div className={styles.panelHeader}>
+                      <div>
+                        <h2>Notification Preferences</h2>
+                        <p>Manage how SavoryBites communicates order updates and promotions.</p>
+                      </div>
+                    </div>
+
+                    <div className={styles.infoCallout} style={{ marginBottom: 18 }}>
+                      <InfoIcon size={18} style={{ flexShrink: 0, marginTop: 2 }} />
+                      <div>
+                        <strong>Email Channel Active:</strong> Transactional receipts, order confirmations, and account security alerts are delivered via email ({profile?.email || "no email set"}). SMS and mobile push notifications are not currently offered.
+                      </div>
+                    </div>
+
+                    <div className={styles.formStack}>
+                      <label className={styles.toggleRow}>
+                        <input
+                          type="checkbox"
+                          checked={emailOrderUpdates}
+                          onChange={(e) => setEmailOrderUpdates(e.target.checked)}
+                        />
+                        <span className={styles.toggleCopy}>
+                          <strong>Order Confirmation &amp; Status Emails</strong>
+                          <span>Receive order confirmation summaries when your order is placed.</span>
+                        </span>
+                      </label>
+
+                      <label className={styles.toggleRow}>
+                        <input
+                          type="checkbox"
+                          checked={emailPromotions}
+                          onChange={(e) => setEmailPromotions(e.target.checked)}
+                        />
+                        <span className={styles.toggleCopy}>
+                          <strong>Seasonal Specials &amp; Promotional Emails</strong>
+                          <span>
+                            Opt in to occasional SavoryBites menu highlights and seasonal offers.
+                            {profile?.marketing_consent_at && emailPromotions
+                              ? ` (Opted in ${formatDate(profile.marketing_consent_at)})`
+                              : ""}
+                          </span>
+                        </span>
+                      </label>
+
+                      <div className={styles.formActions}>
+                        <button
+                          type="button"
+                          className={styles.primaryButton}
+                          disabled={prefsBusy}
+                          onClick={() =>
+                            void savePreferencesPayload(
+                              {
+                                email_order_updates: emailOrderUpdates,
+                                email_promotions: emailPromotions,
+                              },
+                              "Notification preferences updated.",
+                            )
+                          }
+                        >
+                          {prefsBusy ? "Saving..." : "Save Notification Settings"}
+                        </button>
+                      </div>
+                    </div>
+                  </div>
+                )}
+
+                {activeSection === "appearance" && (
+                  <div className={styles.panelCard}>
+                    <div className={styles.panelHeader}>
+                      <div>
+                        <h2>Appearance &amp; Theme</h2>
+                        <p>Choose your preferred display theme across SavoryBites pages.</p>
+                      </div>
+                    </div>
+
+                    <div className={styles.themeCards}>
                       <button
                         type="button"
-                        className={styles.cardAction}
-                        onClick={() => handleSetDefaultAddress(addr.id)}
-                        disabled={settingDefaultId === addr.id}
+                        className={`${styles.themeCard} ${themePref === "light" ? styles.themeCardActive : ""}`}
+                        onClick={() => {
+                          setThemePref("light");
+                          setThemePreference("light");
+                        }}
                       >
-                        {settingDefaultId === addr.id ? "Setting..." : "Set as Default"}
+                        <SunIcon size={22} />
+                        <strong>Warm Cream (Light)</strong>
+                        <span className={styles.helperText}>Classic SavoryBites cream and forest green palette.</span>
                       </button>
-                    )}
-                    <button
-                      type="button"
-                      className={styles.cardAction}
-                      onClick={() => handleOpenEditAddress(addr)}
-                      aria-label={`Edit address ${addr.label}`}
-                    >
-                      <EditIcon size={12} style={{ display: "inline", marginRight: "3px", verticalAlign: "-1px" }} />
-                      <span>Edit</span>
-                    </button>
-                    <button
-                      type="button"
-                      className={`${styles.cardAction} ${styles.cardActionDanger}`}
-                      onClick={() => handleDeleteAddress(addr.id)}
-                      disabled={deletingAddressId === addr.id}
-                      aria-label={`Delete address ${addr.label}`}
-                    >
-                      <TrashIcon size={12} style={{ display: "inline", marginRight: "3px", verticalAlign: "-1px" }} />
-                      <span>{deletingAddressId === addr.id ? "Removing..." : "Delete"}</span>
-                    </button>
-                  </div>
-                </article>
-              ))}
-            </div>
-          )}
-        </section>
-      </section>
 
-      {/* Add / Edit Address Modal */}
-      {addressModalOpen && (
-        <div
-          className={styles.modalBackdrop}
-          role="presentation"
-          onClick={handleCloseAddressModal}
-        >
-          <div
-            className={styles.modalDialog}
-            role="dialog"
-            aria-modal="true"
-            aria-labelledby="address-modal-title"
-            onClick={(e) => e.stopPropagation()}
-          >
+                      <button
+                        type="button"
+                        className={`${styles.themeCard} ${themePref === "dark" ? styles.themeCardActive : ""}`}
+                        onClick={() => {
+                          setThemePref("dark");
+                          setThemePreference("dark");
+                        }}
+                      >
+                        <MoonIcon size={22} />
+                        <strong>Deep Forest (Dark)</strong>
+                        <span className={styles.helperText}>High-contrast evening palette comfortable in low light.</span>
+                      </button>
+
+                      <button
+                        type="button"
+                        className={`${styles.themeCard} ${themePref === "system" ? styles.themeCardActive : ""}`}
+                        onClick={() => {
+                          setThemePref("system");
+                          setThemePreference("system");
+                        }}
+                      >
+                        <MonitorIcon size={22} />
+                        <strong>Match Device</strong>
+                        <span className={styles.helperText}>Automatically follows your operating system setting.</span>
+                      </button>
+                    </div>
+
+                    <div className={styles.formActions} style={{ marginTop: 20 }}>
+                      <button
+                        type="button"
+                        className={styles.primaryButton}
+                        disabled={prefsBusy}
+                        onClick={() =>
+                          void savePreferencesPayload(
+                            { theme_preference: themePref },
+                            "Appearance preference saved to your profile.",
+                          )
+                        }
+                      >
+                        {prefsBusy ? "Saving..." : "Save Appearance Preference"}
+                      </button>
+                    </div>
+                  </div>
+                )}
+
+                {activeSection === "security" && (
+                  <>
+                    <div className={styles.panelCard}>
+                      <div className={styles.panelHeader}>
+                        <div>
+                          <h2>Change Password</h2>
+                          <p>Use at least 8 characters including letters and numbers. Updating your password rotates your session token.</p>
+                        </div>
+                        <button
+                          type="button"
+                          className={styles.secondaryButton}
+                          onClick={() => void logout().then(() => router.push("/"))}
+                        >
+                          <LogOutIcon size={15} />
+                          <span>Sign Out</span>
+                        </button>
+                      </div>
+
+                      <form className={styles.formStack} onSubmit={(e) => void handlePasswordSubmit(e)}>
+                        <div className={styles.formGroup}>
+                          <label htmlFor="sec-current-pw">Current Password</label>
+                          <input
+                            id="sec-current-pw"
+                            className={styles.input}
+                            type="password"
+                            required
+                            value={currentPassword}
+                            onChange={(e) => setCurrentPassword(e.target.value)}
+                          />
+                        </div>
+                        <div className={styles.fieldRow}>
+                          <div className={styles.formGroup}>
+                            <label htmlFor="sec-new-pw">New Password</label>
+                            <input
+                              id="sec-new-pw"
+                              className={styles.input}
+                              type="password"
+                              required
+                              minLength={8}
+                              value={newPassword}
+                              onChange={(e) => setNewPassword(e.target.value)}
+                            />
+                          </div>
+                          <div className={styles.formGroup}>
+                            <label htmlFor="sec-confirm-pw">Confirm New Password</label>
+                            <input
+                              id="sec-confirm-pw"
+                              className={styles.input}
+                              type="password"
+                              required
+                              minLength={8}
+                              value={confirmPassword}
+                              onChange={(e) => setConfirmPassword(e.target.value)}
+                            />
+                          </div>
+                        </div>
+                        <div className={styles.formActions}>
+                          <button type="submit" className={styles.primaryButton} disabled={passwordBusy}>
+                            {passwordBusy ? "Updating..." : "Update Password"}
+                          </button>
+                        </div>
+                      </form>
+                    </div>
+
+                    <div className={styles.dangerZone}>
+                      <h3>Deactivate Account</h3>
+                      <p className={styles.helperText} style={{ marginBottom: 14 }}>
+                        Deactivating signs you out and prevents future logins while preserving restaurant order records cleanly for accounting. Contact management if you ever need your account reactivated.
+                      </p>
+                      <form className={styles.formStack} onSubmit={(e) => void handleDeactivateSubmit(e)}>
+                        <div className={styles.fieldRow}>
+                          <div className={styles.formGroup}>
+                            <label htmlFor="deact-password">Verify Password</label>
+                            <input
+                              id="deact-password"
+                              className={styles.input}
+                              type="password"
+                              required
+                              value={deactivatePassword}
+                              onChange={(e) => setDeactivatePassword(e.target.value)}
+                            />
+                          </div>
+                          <div className={styles.formGroup}>
+                            <label htmlFor="deact-reason">Reason (Optional)</label>
+                            <input
+                              id="deact-reason"
+                              className={styles.input}
+                              type="text"
+                              maxLength={500}
+                              value={deactivateReason}
+                              onChange={(e) => setDeactivateReason(e.target.value)}
+                            />
+                          </div>
+                        </div>
+                        <label className={styles.toggleRow}>
+                          <input
+                            type="checkbox"
+                            checked={deactivateConfirmed}
+                            onChange={(e) => setDeactivateConfirmed(e.target.checked)}
+                          />
+                          <span className={styles.toggleCopy}>
+                            <strong>I understand this will deactivate my SavoryBites login immediately.</strong>
+                          </span>
+                        </label>
+                        <div className={styles.formActions}>
+                          <button type="submit" className={styles.dangerButton} disabled={deactivateBusy}>
+                            {deactivateBusy ? "Deactivating..." : "Deactivate My Account"}
+                          </button>
+                        </div>
+                      </form>
+                    </div>
+                  </>
+                )}
+              </section>
+            </div>
+          </>
+        )}
+      </main>
+
+      {showAddressModal && (
+        <div className={styles.modalOverlay} role="dialog" aria-modal="true" aria-labelledby="address-modal-title">
+          <div className={styles.modalContent}>
             <div className={styles.modalHeader}>
-              <h3 id="address-modal-title">
-                {editingAddress ? "Edit Saved Address" : "Add New Saved Address"}
-              </h3>
+              <h3 id="address-modal-title">{editingAddress ? "Edit Saved Address" : "Add Saved Address"}</h3>
               <button
                 type="button"
-                className={styles.closeButton}
-                onClick={handleCloseAddressModal}
-                aria-label="Close dialog"
+                className={styles.closeModalButton}
+                onClick={() => setShowAddressModal(false)}
+                aria-label="Close modal"
               >
-                <CloseIcon size={18} />
+                <CloseIcon size={20} />
               </button>
             </div>
 
-            <form onSubmit={handleSaveAddress} noValidate>
-              <div className={styles.modalBody}>
-                {addressModalError && (
-                  <p className={styles.inlineError} role="alert">
-                    {addressModalError}
-                  </p>
-                )}
-
-                <div className={styles.formGrid}>
-                  <div className={styles.formRow}>
-                    <div className={styles.formGroup}>
-                      <label htmlFor="address-label">Label *</label>
-                      <select
-                        id="address-label"
-                        className={styles.select}
-                        value={addressForm.label}
-                        onChange={(e) =>
-                          setAddressForm((prev) => ({ ...prev, label: e.target.value }))
-                        }
-                      >
-                        <option value="Home">Home</option>
-                        <option value="Work">Work</option>
-                        <option value="Office">Office</option>
-                        <option value="Other">Other</option>
-                      </select>
-                    </div>
-
-                    <div className={styles.formGroup}>
-                      <label htmlFor="address-recipient">Recipient Name *</label>
-                      <input
-                        id="address-recipient"
-                        type="text"
-                        required
-                        className={styles.input}
-                        value={addressForm.recipient_name}
-                        onChange={(e) =>
-                          setAddressForm((prev) => ({
-                            ...prev,
-                            recipient_name: e.target.value,
-                          }))
-                        }
-                        placeholder="Recipient full name"
-                      />
-                    </div>
-                  </div>
-
-                  <div className={styles.formGroup}>
-                    <label htmlFor="address-phone">Contact Phone *</label>
-                    <input
-                      id="address-phone"
-                      type="tel"
-                      required
-                      className={styles.input}
-                      value={addressForm.phone}
-                      onChange={(e) =>
-                        setAddressForm((prev) => ({ ...prev, phone: e.target.value }))
-                      }
-                      placeholder="09171234567 or +639171234567"
-                    />
-                  </div>
-
-                  <div className={styles.formGroup}>
-                    <label htmlFor="address-street">Street Address & Landmark *</label>
-                    <textarea
-                      id="address-street"
-                      required
-                      rows={2}
-                      className={styles.textarea}
-                      value={addressForm.street_address}
-                      onChange={(e) =>
-                        setAddressForm((prev) => ({
-                          ...prev,
-                          street_address: e.target.value,
-                        }))
-                      }
-                      placeholder="Unit, Building, Street, Barangay"
-                    />
-                  </div>
-
-                  <div className={styles.formRow}>
-                    <div className={styles.formGroup}>
-                      <label htmlFor="address-city">City *</label>
-                      <input
-                        id="address-city"
-                        type="text"
-                        required
-                        className={styles.input}
-                        value={addressForm.city}
-                        onChange={(e) =>
-                          setAddressForm((prev) => ({ ...prev, city: e.target.value }))
-                        }
-                      />
-                    </div>
-
-                    <div className={styles.formGroup}>
-                      <label htmlFor="address-state">State / Province</label>
-                      <input
-                        id="address-state"
-                        type="text"
-                        className={styles.input}
-                        value={addressForm.state_province}
-                        onChange={(e) =>
-                          setAddressForm((prev) => ({
-                            ...prev,
-                            state_province: e.target.value,
-                          }))
-                        }
-                      />
-                    </div>
-                  </div>
-
-                  <div className={styles.formGroup}>
-                    <label htmlFor="address-postal">Postal / Zip Code</label>
-                    <input
-                      id="address-postal"
-                      type="text"
-                      className={styles.input}
-                      value={addressForm.postal_code}
-                      onChange={(e) =>
-                        setAddressForm((prev) => ({
-                          ...prev,
-                          postal_code: e.target.value,
-                        }))
-                      }
-                    />
-                  </div>
-
-                  <div className={styles.formGroup}>
-                    <label htmlFor="address-instructions">Delivery Instructions</label>
-                    <textarea
-                      id="address-instructions"
-                      rows={2}
-                      className={styles.textarea}
-                      value={addressForm.delivery_instructions}
-                      onChange={(e) =>
-                        setAddressForm((prev) => ({
-                          ...prev,
-                          delivery_instructions: e.target.value,
-                        }))
-                      }
-                      placeholder="e.g. Ring doorbell, leave with guard at front desk"
-                    />
-                  </div>
-
-                  <label className={styles.checkboxLabel}>
-                    <input
-                      type="checkbox"
-                      checked={addressForm.is_default}
-                      disabled={editingAddress?.is_default}
-                      onChange={(e) =>
-                        setAddressForm((prev) => ({
-                          ...prev,
-                          is_default: e.target.checked,
-                        }))
-                      }
-                    />
-                    <span>
-                      Set as default delivery address
-                      {editingAddress?.is_default ? " (Currently default)" : ""}
-                    </span>
-                  </label>
+            <form className={styles.formStack} onSubmit={(e) => void handleSaveAddress(e)}>
+              <div className={styles.fieldRow}>
+                <div className={styles.formGroup}>
+                  <label htmlFor="addr-label">Address Label</label>
+                  <input
+                    id="addr-label"
+                    className={styles.input}
+                    required
+                    maxLength={50}
+                    placeholder="Home, Work, etc."
+                    value={addressForm.label}
+                    onChange={(e) => setAddressForm((prev) => ({ ...prev, label: e.target.value }))}
+                  />
+                </div>
+                <div className={styles.formGroup}>
+                  <label htmlFor="addr-recipient">Recipient Name</label>
+                  <input
+                    id="addr-recipient"
+                    className={styles.input}
+                    required
+                    minLength={2}
+                    maxLength={100}
+                    value={addressForm.recipient_name}
+                    onChange={(e) => setAddressForm((prev) => ({ ...prev, recipient_name: e.target.value }))}
+                  />
                 </div>
               </div>
 
-              <div className={styles.modalFooter}>
+              <div className={styles.formGroup}>
+                <label htmlFor="addr-phone">Contact Phone (PH)</label>
+                <input
+                  id="addr-phone"
+                  className={styles.input}
+                  required
+                  placeholder="09171234567"
+                  value={addressForm.phone}
+                  onChange={(e) => setAddressForm((prev) => ({ ...prev, phone: e.target.value }))}
+                />
+              </div>
+
+              <div className={styles.formGroup}>
+                <label htmlFor="addr-street">Street Address / House / Unit</label>
+                <input
+                  id="addr-street"
+                  className={styles.input}
+                  required
+                  minLength={3}
+                  maxLength={255}
+                  value={addressForm.street_address}
+                  onChange={(e) => setAddressForm((prev) => ({ ...prev, street_address: e.target.value }))}
+                />
+              </div>
+
+              <div className={styles.fieldRow}>
+                <div className={styles.formGroup}>
+                  <label htmlFor="addr-barangay">Barangay</label>
+                  <input
+                    id="addr-barangay"
+                    className={styles.input}
+                    maxLength={120}
+                    placeholder="e.g., Poblacion"
+                    value={addressForm.barangay || ""}
+                    onChange={(e) => setAddressForm((prev) => ({ ...prev, barangay: e.target.value }))}
+                  />
+                </div>
+                <div className={styles.formGroup}>
+                  <label htmlFor="addr-city">City / Municipality</label>
+                  <input
+                    id="addr-city"
+                    className={styles.input}
+                    required
+                    minLength={2}
+                    maxLength={100}
+                    placeholder="e.g., Dumaguete"
+                    value={addressForm.city}
+                    onChange={(e) => setAddressForm((prev) => ({ ...prev, city: e.target.value }))}
+                  />
+                </div>
+              </div>
+
+              <div className={styles.fieldRow}>
+                <div className={styles.formGroup}>
+                  <label htmlFor="addr-province">Province</label>
+                  <input
+                    id="addr-province"
+                    className={styles.input}
+                    maxLength={100}
+                    value={addressForm.state_province || ""}
+                    onChange={(e) => setAddressForm((prev) => ({ ...prev, state_province: e.target.value }))}
+                  />
+                </div>
+                <div className={styles.formGroup}>
+                  <label htmlFor="addr-postal">Postal Code</label>
+                  <input
+                    id="addr-postal"
+                    className={styles.input}
+                    maxLength={20}
+                    value={addressForm.postal_code || ""}
+                    onChange={(e) => setAddressForm((prev) => ({ ...prev, postal_code: e.target.value }))}
+                  />
+                </div>
+              </div>
+
+              <div className={styles.formGroup}>
+                <label htmlFor="addr-instructions">Delivery / Gate / Landmark Notes</label>
+                <textarea
+                  id="addr-instructions"
+                  className={styles.textarea}
+                  rows={2}
+                  maxLength={500}
+                  value={addressForm.delivery_instructions || ""}
+                  onChange={(e) =>
+                    setAddressForm((prev) => ({ ...prev, delivery_instructions: e.target.value }))
+                  }
+                />
+              </div>
+
+              <label className={styles.toggleRow}>
+                <input
+                  type="checkbox"
+                  checked={Boolean(addressForm.is_default)}
+                  onChange={(e) => setAddressForm((prev) => ({ ...prev, is_default: e.target.checked }))}
+                />
+                <span className={styles.toggleCopy}>
+                  <strong>Set as my default saved address</strong>
+                </span>
+              </label>
+
+              <div className={styles.formActions}>
                 <button
                   type="button"
                   className={styles.secondaryButton}
-                  onClick={handleCloseAddressModal}
-                  disabled={addressSaving}
+                  onClick={() => setShowAddressModal(false)}
                 >
                   Cancel
                 </button>
-                <button
-                  type="submit"
-                  className={styles.primaryButton}
-                  disabled={addressSaving}
-                >
-                  {addressSaving ? "Saving..." : editingAddress ? "Save Changes" : "Add Address"}
+                <button type="submit" className={styles.primaryButton} disabled={addressBusy}>
+                  {addressBusy ? "Saving..." : "Save Address"}
                 </button>
               </div>
             </form>
           </div>
         </div>
       )}
-    </main>
+
+      <Footer />
+    </div>
   );
 }

@@ -99,6 +99,33 @@
   transition: var(--transition-interactive);
 }
 
+.orderActions {
+  display: inline-flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  align-items: center;
+}
+
+.reorderBtn {
+  align-items: center;
+  background: var(--brand-gold-bright, #f4be37);
+  border: 0;
+  border-radius: var(--radius-full, 999px);
+  color: var(--brand-green-deep, #092b1c);
+  cursor: pointer;
+  display: inline-flex;
+  font: inherit;
+  font-size: 12px;
+  font-weight: 800;
+  gap: 5px;
+  padding: 9px 15px;
+}
+
+.reorderBtn:disabled {
+  opacity: 0.6;
+  cursor: wait;
+}
+
 .orders a:hover,
 .message a:hover,
 .message button:hover,

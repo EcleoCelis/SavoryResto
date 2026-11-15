@@ -1,16 +1,20 @@
-import type { CustomerUser } from "../../types/auth";
 import type {
   AddressCreateInput,
   AddressUpdateInput,
   CustomerAddress,
+  CustomerDeactivateInput,
+  CustomerEmailChangeInput,
+  CustomerPasswordChangeInput,
+  CustomerPreferencesUpdateInput,
+  CustomerProfile,
   CustomerProfileUpdateInput,
+  FavoriteProduct,
 } from "../../types/customer";
 import { AuthApiError } from "./auth";
-
-const apiUrl = process.env.NEXT_PUBLIC_API_URL || "http://127.0.0.1:8001";
+import { getApiBaseUrl } from "./base-url";
 
 async function request<T>(path: string, init?: RequestInit): Promise<T> {
-  const response = await fetch(`${apiUrl}${path}`, {
+  const response = await fetch(`${getApiBaseUrl()}${path}`, {
     credentials: "include",
     ...init,
   });
@@ -36,15 +40,120 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
   return data as T;
 }
 
-export function updateCustomerProfile(data: CustomerProfileUpdateInput): Promise<CustomerUser> {
-  return request<CustomerUser>("/api/v1/customers/me", {
+export function getCustomerProfile(): Promise<CustomerProfile> {
+  return request<CustomerProfile>("/api/v1/customers/me");
+}
+
+export function updateCustomerProfile(data: CustomerProfileUpdateInput): Promise<CustomerProfile> {
+  return request<CustomerProfile>("/api/v1/customers/me", {
     method: "PUT",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({
-      full_name: data.full_name.trim(),
+      full_name: data.full_name?.trim() || undefined,
+      first_name: data.first_name?.trim() || undefined,
+      last_name: data.last_name?.trim() || undefined,
       phone: data.phone?.trim() ? data.phone.trim() : null,
     }),
   });
+}
+
+export function changeCustomerEmail(data: CustomerEmailChangeInput): Promise<CustomerProfile> {
+  return request<CustomerProfile>("/api/v1/customers/me/email", {
+    method: "PUT",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(data),
+  });
+}
+
+export function uploadCustomerAvatar(file: File): Promise<CustomerProfile> {
+  const formData = new FormData();
+  formData.append("file", file);
+  return request<CustomerProfile>("/api/v1/customers/me/avatar", {
+    method: "POST",
+    body: formData,
+  });
+}
+
+export function removeCustomerAvatar(): Promise<CustomerProfile> {
+  return request<CustomerProfile>("/api/v1/customers/me/avatar", {
+    method: "DELETE",
+  });
+}
+
+export function updateCustomerPreferences(
+  data: CustomerPreferencesUpdateInput,
+): Promise<CustomerProfile> {
+  return request<CustomerProfile>("/api/v1/customers/me/preferences", {
+    method: "PUT",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(data),
+  });
+}
+
+export function changeCustomerPassword(
+  data: CustomerPasswordChangeInput,
+): Promise<{ message: string }> {
+  return request<{ message: string }>("/api/v1/customers/me/password", {
+    method: "PUT",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(data),
+  });
+}
+
+export function deactivateCustomerAccount(
+  data: CustomerDeactivateInput,
+): Promise<{ message: string }> {
+  return request<{ message: string }>("/api/v1/customers/me/deactivate", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(data),
+  });
+}
+
+export function getCustomerFavorites(): Promise<FavoriteProduct[]> {
+  return request<FavoriteProduct[]>("/api/v1/customers/me/favorites").then((items) =>
+    items.map((item) => ({
+      ...item,
+      product: {
+        ...item.product,
+        price: Number(item.product.price),
+        sizes: (item.product.sizes || []).map((s) => ({
+          ...s,
+          price_adjustment: Number(s.price_adjustment),
+        })),
+        addons: (item.product.addons || []).map((a) => ({
+          ...a,
+          price_adjustment: Number(a.price_adjustment),
+        })),
+      },
+    })),
+  );
+}
+
+export function addCustomerFavorite(productId: number): Promise<FavoriteProduct> {
+  return request<FavoriteProduct>(`/api/v1/customers/me/favorites/${productId}`, {
+    method: "POST",
+  }).then((item) => ({
+    ...item,
+    product: {
+      ...item.product,
+      price: Number(item.product.price),
+      sizes: (item.product.sizes || []).map((s) => ({
+        ...s,
+        price_adjustment: Number(s.price_adjustment),
+      })),
+      addons: (item.product.addons || []).map((a) => ({
+        ...a,
+        price_adjustment: Number(a.price_adjustment),
+      })),
+    },
+  }));
+}
+
+export function removeCustomerFavorite(productId: number): Promise<void> {
+  return request<{ message: string }>(`/api/v1/customers/me/favorites/${productId}`, {
+    method: "DELETE",
+  }).then(() => undefined);
 }
 
 export function getCustomerAddresses(): Promise<CustomerAddress[]> {

@@ -21,6 +21,7 @@ export type Product = {
   category: Category;
   sizes: ProductOption[];
   addons: ProductOption[];
+  ingredient_names?: string[];
 };
 
 export type ProductOption = {

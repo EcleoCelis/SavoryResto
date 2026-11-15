@@ -5,8 +5,20 @@ from sqlalchemy.orm import Session
 from app.core.security import get_current_customer
 from app.db.database import get_db
 from app.db.models.customer import Customer
-from app.schemas.order import CancelOrderRequest, OrderHistoryResponse, OrderResponse, PlaceOrderRequest
-from app.services.order_service import cancel_customer_order, get_customer_order, list_customer_orders, place_order
+from app.schemas.order import (
+    CancelOrderRequest,
+    OrderHistoryResponse,
+    OrderResponse,
+    PlaceOrderRequest,
+    ReorderPreviewResponse,
+)
+from app.services.order_service import (
+    cancel_customer_order,
+    get_customer_order,
+    list_customer_orders,
+    place_order,
+    preview_reorder,
+)
 
 
 router = APIRouter(prefix="/api/v1/orders", tags=["Orders"])
@@ -58,6 +70,18 @@ def get_order(
     return order
 
 
+@router.post("/{order_id}/reorder-preview", response_model=ReorderPreviewResponse)
+def get_reorder_preview(
+    order_id: int,
+    current_customer: Customer = Depends(get_current_customer),
+    db: Session = Depends(get_db),
+):
+    preview = preview_reorder(db, current_customer, order_id)
+    if preview is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Order not found.")
+    return preview
+
+
 @router.patch("/{order_id}/cancel", response_model=OrderResponse)
 def cancel_order(
     order_id: int,
@@ -73,3 +97,15 @@ def cancel_order(
     if order is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Order not found.")
     return order
+
+
+@router.post("/{order_id}/reorder-preview", response_model=ReorderPreviewResponse)
+def get_reorder_preview(
+    order_id: int,
+    current_customer: Customer = Depends(get_current_customer),
+    db: Session = Depends(get_db),
+):
+    preview = preview_reorder(db, current_customer, order_id)
+    if preview is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Order not found.")
+    return preview

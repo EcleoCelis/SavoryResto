@@ -1,5 +1,6 @@
 import logging
 import traceback
+from urllib.parse import urlsplit
 
 from fastapi import Depends, FastAPI, HTTPException, Request, Response, status
 from fastapi.exceptions import RequestValidationError
@@ -34,9 +35,48 @@ app = FastAPI(
 )
 
 
-# Security Headers & Cache-Control Middleware
+# Security Headers, CSRF Origin Validation & Cache-Control Middleware
+SAFE_HTTP_METHODS = frozenset({"GET", "HEAD", "OPTIONS"})
+
+
+def _is_trusted_csrf_origin(request: Request) -> bool:
+    sec_fetch_site = request.headers.get("sec-fetch-site")
+    if sec_fetch_site == "cross-site":
+        return False
+
+    origin_header = request.headers.get("origin")
+    referer_header = request.headers.get("referer")
+    candidate = origin_header
+    if not candidate and referer_header:
+        parsed_ref = urlsplit(referer_header)
+        if parsed_ref.scheme and parsed_ref.netloc:
+            candidate = f"{parsed_ref.scheme}://{parsed_ref.netloc}"
+
+    if not candidate:
+        return True
+
+    normalized = candidate.strip().rstrip("/")
+    allowed = {origin.rstrip("/") for origin in settings.cors_origins}
+    host = request.headers.get("host")
+    if host:
+        allowed.add(f"http://{host.rstrip('/')}")
+        allowed.add(f"https://{host.rstrip('/')}")
+    return normalized in allowed
+
+
 @app.middleware("http")
 async def apply_security_headers(request: Request, call_next):
+    if (
+        request.method not in SAFE_HTTP_METHODS
+        and not request.headers.get("authorization")
+        and (request.cookies.get("access_token") or request.cookies.get("staff_access_token"))
+    ):
+        if not _is_trusted_csrf_origin(request):
+            return JSONResponse(
+                status_code=status.HTTP_403_FORBIDDEN,
+                content={"detail": "Blocked cross-origin cookie-authenticated mutation."},
+            )
+
     response: Response = await call_next(request)
 
     # Core Security Headers

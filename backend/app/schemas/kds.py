@@ -20,6 +20,8 @@ class KdsOrderResponse(BaseModel):
     fulfillment_type: str | None
     fulfillment_destination: str
     ordered_at: datetime
+    allergy_alert: str | None = None
+    notes: str | None = None
     items: list[KdsOrderItemResponse]
 
 

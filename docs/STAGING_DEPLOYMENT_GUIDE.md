@@ -53,7 +53,7 @@ All staging settings are configured via environment variables. Never commit real
 | `FRONTEND_URL` | Yes | `https://staging.savorybites.local:8443` |
 | `NEXT_PUBLIC_API_URL` | Yes | `https://staging.savorybites.local:8443` |
 | `JWT_SECRET_KEY` | Yes | Minimum 32 random characters (unique to staging). |
-| `TRUSTED_PROXIES` | Yes | Upstream proxy IPs/CIDRs (e.g. `127.0.0.1,::1,10.0.0.0/8,nginx`). |
+| `TRUSTED_PROXIES` | Yes | Upstream proxy IPs/CIDRs (e.g. `127.0.0.1,::1,10.0.0.0/8,172.16.0.0/12,192.168.0.0/16`). |
 | `ALLOWED_CORS_ORIGINS`| Yes | `https://staging.savorybites.local:8443,http://localhost:3000` |
 | `SMTP_HOST` | No | Staging test inbox SMTP server (e.g. `smtp.mailtrap.io`). If omitted, emails route to memory sink. |
 | `EMAILS_FROM_EMAIL` | Yes | `noreply@savorybites.staging` |
@@ -63,9 +63,17 @@ All staging settings are configured via environment variables. Never commit real
 ## 4. Database Provisioning & Migrations
 
 ### A. Initializing a Fresh Staging Database
-To create the schema, synchronize sequences, seed baseline roles/tables/payment methods, and provision staging staff accounts in a single automated step:
+To create the schema, apply migration constraints/partial indexes, synchronize sequences, seed baseline roles/tables/payment methods/recipes, and provision staging staff accounts in a single automated step:
 ```bash
 python backend/scripts/init_staging_db.py
+```
+
+### B. Provisioning Staging Environment & TLS Certificates
+Before launching the Docker staging stack for the first time:
+```bash
+cp .env.staging.example .env.staging
+python backend/scripts/generate_staging_certs.py
+docker compose --env-file .env.staging -f docker-compose.staging.yml up -d --build
 ```
 
 ### B. Applying Incremental Migrations

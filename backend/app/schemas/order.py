@@ -14,6 +14,9 @@ class PlaceOrderRequest(CheckoutQuoteRequest):
     fulfillment_type: Literal["table_service", "counter_pickup"]
     restaurant_table_id: int | None = Field(default=None, gt=0)
     payment_method_code: str = Field(min_length=2, max_length=50, pattern=r"^[a-z][a-z0-9_]*$")
+    selected_address_id: int | None = Field(default=None, gt=0)
+    include_allergy_alert: bool = True
+    preparation_notes: str | None = Field(default=None, max_length=300)
 
     @field_validator("payment_method_code")
     @classmethod
@@ -24,6 +27,14 @@ class PlaceOrderRequest(CheckoutQuoteRequest):
     @classmethod
     def validate_table_id(cls, table_id: int | None):
         return table_id
+
+    @field_validator("preparation_notes")
+    @classmethod
+    def normalize_notes(cls, value: str | None):
+        if value is None:
+            return None
+        cleaned = value.strip()
+        return cleaned or None
 
 
 class OrderItemResponse(BaseModel):
@@ -47,6 +58,9 @@ class OrderResponse(BaseModel):
     subtotal: Decimal
     total: Decimal
     payment_method: PaymentMethodResponse | None
+    delivery_address_snapshot: dict | None = None
+    kitchen_allergy_alert: str | None = None
+    notes: str | None = None
     ordered_at: datetime
     completed_at: datetime | None
     cancelled_at: datetime | None
@@ -74,6 +88,7 @@ class OrderHistoryItemResponse(BaseModel):
     order_type: str
     fulfillment_type: str | None
     table_number: str | None
+    payment_method_label: str | None = None
     total: Decimal
     ordered_at: datetime
     item_count: int
@@ -84,3 +99,29 @@ class OrderHistoryResponse(BaseModel):
     page: int
     page_size: int
     total: int
+
+
+class ReorderAvailableItemResponse(BaseModel):
+    product_id: int
+    name: str
+    image_url: str | None
+    size: str
+    addons: list[str]
+    quantity: int
+    current_unit_price: Decimal
+    previous_unit_price: Decimal
+    price_changed: bool
+
+
+class ReorderUnavailableItemResponse(BaseModel):
+    product_id: int
+    name: str
+    reason: str
+
+
+class ReorderPreviewResponse(BaseModel):
+    order_id: int
+    order_number: str
+    available_items: list[ReorderAvailableItemResponse]
+    unavailable_items: list[ReorderUnavailableItemResponse]
+    has_price_changes: bool

@@ -2,6 +2,7 @@
 
 import Image from "next/image";
 import Link from "next/link";
+import { useEffect, useState } from "react";
 
 import { useCart } from "../../components/cart/CartProvider";
 import { useFulfillment } from "../../components/fulfillment/FulfillmentProvider";
@@ -16,6 +17,7 @@ import {
   UtensilsIcon,
 } from "../../components/ui/Icons";
 import { MAX_CART_QUANTITY } from "../../lib/cart";
+import { REORDER_NOTICE_STORAGE_KEY } from "../../lib/reorder";
 import styles from "./cart.module.css";
 
 const currencyFormatter = new Intl.NumberFormat("en-PH", {
@@ -31,6 +33,27 @@ function formatOptions(size: string, addons: string[]) {
 export default function CartPage() {
   const { items, itemCount, subtotal, removeItem, updateQuantity } = useCart();
   const { selection } = useFulfillment();
+  const [reorderNotice, setReorderNotice] = useState("");
+
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    let active = true;
+    void Promise.resolve().then(() => {
+      if (!active) return;
+      try {
+        const msg = window.sessionStorage.getItem(REORDER_NOTICE_STORAGE_KEY);
+        if (msg) {
+          setReorderNotice(msg);
+          window.sessionStorage.removeItem(REORDER_NOTICE_STORAGE_KEY);
+        }
+      } catch {
+        // Ignore storage read failure.
+      }
+    });
+    return () => {
+      active = false;
+    };
+  }, []);
 
   const checkoutHref =
     selection === null ? "/start-order?next=%2Fcheckout" : "/checkout";
@@ -56,6 +79,34 @@ export default function CartPage() {
               : "Review the dishes you would like to order."}
           </span>
         </header>
+
+        {reorderNotice && (
+          <div
+            role="status"
+            style={{
+              background: "var(--status-confirmed-bg, #eaf6fa)",
+              border: "1px solid var(--status-confirmed-border, #bce1ee)",
+              borderRadius: 12,
+              color: "var(--text-primary, #18251e)",
+              display: "flex",
+              fontSize: 13.5,
+              justifyContent: "space-between",
+              gap: 12,
+              marginBottom: 18,
+              padding: "12px 16px",
+            }}
+          >
+            <span>{reorderNotice}</span>
+            <button
+              type="button"
+              onClick={() => setReorderNotice("")}
+              style={{ background: "transparent", border: 0, cursor: "pointer", fontWeight: 700 }}
+              aria-label="Dismiss notice"
+            >
+              ✕
+            </button>
+          </div>
+        )}
 
         {items.length === 0 ? (
           <section className={styles.empty} aria-label="Empty cart notice">

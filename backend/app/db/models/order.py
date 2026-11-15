@@ -27,6 +27,8 @@ class Order(Base):
     total_amount: Mapped[Decimal] = mapped_column(Numeric, nullable=False)
     idempotency_key: Mapped[str | None] = mapped_column(String(128), nullable=True)
     payment_method_id: Mapped[int | None] = mapped_column(ForeignKey("payment_methods.id", ondelete="RESTRICT"), nullable=True, index=True)
+    delivery_address_snapshot: Mapped[dict | None] = mapped_column(JSON, nullable=True)
+    kitchen_allergy_alert: Mapped[str | None] = mapped_column(Text, nullable=True)
     notes: Mapped[str | None] = mapped_column(Text, nullable=True)
     ordered_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
     completed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)

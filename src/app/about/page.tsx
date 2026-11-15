@@ -161,6 +161,61 @@ export default function AboutPage() {
                 </Link>
               </div>
             </section>
+
+            {/* Menu Photography Attribution */}
+            <section className={styles.card} aria-labelledby="media-credits-title" style={{ marginTop: "32px", marginBottom: 0 }}>
+              <header className={styles.cardHeader}>
+                <p className={styles.kicker}>Media Licensing</p>
+                <h2 id="media-credits-title" className={styles.cardTitle}>
+                  Menu Photography Credits
+                </h2>
+              </header>
+              <p className={styles.cardText} style={{ marginBottom: "12px" }}>
+                Selected menu dish photographs are sourced from Wikimedia Commons under open Creative Commons and Public Domain licenses (resized and converted to WebP for menu performance):
+              </p>
+              <ul style={{ margin: 0, paddingLeft: "20px", color: "#405249", fontSize: "13.5px", lineHeight: "1.7" }}>
+                <li>
+                  <strong>Crispy Chicken Meal:</strong>{" "}
+                  <a href="https://commons.wikimedia.org/wiki/File:Thai-style_Hainanese_Crispy_Fried_Chicken_Rice.jpg" target="_blank" rel="noopener noreferrer">
+                    Thai-style Hainanese Crispy Fried Chicken Rice
+                  </a>{" "}
+                  by Alpha —{" "}
+                  <a href="https://creativecommons.org/licenses/by-sa/2.0/" target="_blank" rel="noopener noreferrer">
+                    CC BY-SA 2.0
+                  </a>
+                </li>
+                <li>
+                  <strong>Chicken Alfredo:</strong>{" "}
+                  <a href="https://commons.wikimedia.org/wiki/File:Fettuccini_alfredo_with_grilled_chicken_(Medici)_(53448852).jpg" target="_blank" rel="noopener noreferrer">
+                    Fettuccini alfredo with grilled chicken
+                  </a>{" "}
+                  by Kim Scarborough —{" "}
+                  <a href="https://creativecommons.org/licenses/by-sa/2.0/" target="_blank" rel="noopener noreferrer">
+                    CC BY-SA 2.0
+                  </a>
+                </li>
+                <li>
+                  <strong>Chicken Adobo Rice:</strong>{" "}
+                  <a href="https://commons.wikimedia.org/wiki/File:Chicken_Adobo_over_rice.jpg" target="_blank" rel="noopener noreferrer">
+                    Chicken Adobo over rice
+                  </a>{" "}
+                  by Jack Lawrence —{" "}
+                  <a href="https://creativecommons.org/licenses/by/2.0/" target="_blank" rel="noopener noreferrer">
+                    CC BY 2.0
+                  </a>
+                </li>
+                <li>
+                  <strong>Hawaiian Pizza:</strong>{" "}
+                  <a href="https://commons.wikimedia.org/wiki/File:Hawaiian_pizza_image.jpg" target="_blank" rel="noopener noreferrer">
+                    Hawaiian pizza image
+                  </a>{" "}
+                  by Elsie Hui —{" "}
+                  <a href="https://creativecommons.org/licenses/by/2.0/" target="_blank" rel="noopener noreferrer">
+                    CC BY 2.0
+                  </a>
+                </li>
+              </ul>
+            </section>
           </div>
         </div>
       </main>

@@ -11,8 +11,13 @@ import { Footer } from "../../components/layout/Footer";
 import { Header } from "../../components/layout/Header";
 import { ArrowLeftIcon, ArrowRightIcon, CheckIcon, ShieldCheckIcon } from "../../components/ui/Icons";
 import { CheckoutApiError, getCheckoutCustomer, quoteCheckout } from "../../lib/api/checkout";
+import { getCustomerAddresses, getCustomerProfile } from "../../lib/api/customer";
+import { formatAllergenLabel } from "../../lib/personalization";
 import type { CheckoutCustomer, CheckoutQuote } from "../../types/checkout";
+import type { CustomerAddress, CustomerProfile } from "../../types/customer";
 import styles from "./checkout.module.css";
+
+const CHECKOUT_EXTRAS_STORAGE_KEY = "savorybites_checkout_extras";
 
 const currencyFormatter = new Intl.NumberFormat("en-PH", {
   style: "currency",
@@ -25,10 +30,31 @@ export default function CheckoutPage() {
   const { items } = useCart();
   const { selection } = useFulfillment();
   const [customer, setCustomer] = useState<CheckoutCustomer | null>(null);
+  const [profile, setProfile] = useState<CustomerProfile | null>(null);
+  const [addresses, setAddresses] = useState<CustomerAddress[]>([]);
+  const [selectedAddressId, setSelectedAddressId] = useState<number | null>(null);
+  const [includeAllergyAlert, setIncludeAllergyAlert] = useState(true);
+  const [preparationNotes, setPreparationNotes] = useState("");
   const [quote, setQuote] = useState<CheckoutQuote | null>(null);
   const [error, setError] = useState("");
   const [isLoading, setIsLoading] = useState(true);
   const [retryCount, setRetryCount] = useState(0);
+
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    try {
+      window.sessionStorage.setItem(
+        CHECKOUT_EXTRAS_STORAGE_KEY,
+        JSON.stringify({
+          selectedAddressId,
+          includeAllergyAlert,
+          preparationNotes: preparationNotes.trim() || null,
+        })
+      );
+    } catch {
+      // Ignore storage write errors.
+    }
+  }, [includeAllergyAlert, preparationNotes, selectedAddressId]);
 
   useEffect(() => {
     if (items.length === 0) return;
@@ -42,7 +68,7 @@ export default function CheckoutPage() {
       setIsLoading(true);
       setError("");
       try {
-        const [loadedCustomer, loadedQuote] = await Promise.all([
+        const [loadedCustomer, loadedQuote, loadedAddresses, loadedProfile] = await Promise.all([
           getCheckoutCustomer(),
           quoteCheckout({
             items: items.map((item) => ({
@@ -53,6 +79,8 @@ export default function CheckoutPage() {
               addons: item.addons,
             })),
           }),
+          getCustomerAddresses().catch(() => [] as CustomerAddress[]),
+          getCustomerProfile().catch(() => null),
         ]);
         if (!active) return;
         const cartByLineId = new Map(items.map((item) => [item.lineId, item]));
@@ -66,6 +94,16 @@ export default function CheckoutPage() {
           return;
         }
         setCustomer(loadedCustomer);
+        setAddresses(loadedAddresses);
+        setProfile(loadedProfile);
+        if (loadedProfile) {
+          setIncludeAllergyAlert(Boolean(loadedProfile.share_allergy_with_kitchen));
+        }
+        setSelectedAddressId((prev) => {
+          if (prev !== null && loadedAddresses.some((a) => a.id === prev)) return prev;
+          const defaultAddr = loadedAddresses.find((a) => a.is_default) ?? loadedAddresses[0];
+          return defaultAddr ? defaultAddr.id : null;
+        });
         setQuote(loadedQuote);
       } catch (requestError) {
         if (!active) return;
@@ -179,6 +217,98 @@ export default function CheckoutPage() {
                     <dd>{customer.address || "Not provided (optional for dine-in & pickup)"}</dd>
                   </div>
                 </dl>
+
+                {addresses.length > 0 && (
+                  <div style={{ marginTop: 18 }}>
+                    <p className={styles.eyebrow}>Contact &amp; Reference Address</p>
+                    <div className={styles.addressSelectorList}>
+                      {addresses.map((addr) => (
+                        <label
+                          key={addr.id}
+                          className={`${styles.addressChoice} ${
+                            selectedAddressId === addr.id ? styles.addressChoiceSelected : ""
+                          }`}
+                        >
+                          <input
+                            type="radio"
+                            name="selected-address"
+                            checked={selectedAddressId === addr.id}
+                            onChange={() => setSelectedAddressId(addr.id)}
+                          />
+                          <span>
+                            <span className={styles.addressChoiceTitle}>
+                              {addr.label} ({addr.recipient_name}) ·{" "}
+                              {addr.is_within_service_area ? "Within Local Area" : "Outside Local Zone"}
+                            </span>
+                            <span className={styles.addressChoiceText}>
+                              {addr.street_address}
+                              {addr.barangay ? `, Brgy. ${addr.barangay}` : ""}, {addr.city}
+                            </span>
+                          </span>
+                        </label>
+                      ))}
+                      <label
+                        className={`${styles.addressChoice} ${
+                          selectedAddressId === null ? styles.addressChoiceSelected : ""
+                        }`}
+                      >
+                        <input
+                          type="radio"
+                          name="selected-address"
+                          checked={selectedAddressId === null}
+                          onChange={() => setSelectedAddressId(null)}
+                        />
+                        <span>
+                          <span className={styles.addressChoiceTitle}>No address snapshot</span>
+                          <span className={styles.addressChoiceText}>
+                            Proceed without attaching a saved address snapshot.
+                          </span>
+                        </span>
+                      </label>
+                    </div>
+                  </div>
+                )}
+
+                {profile?.allergy_consent_given &&
+                  (profile.allergy_flags.length > 0 || profile.disliked_ingredients) && (
+                    <label className={styles.allergyCheckBox}>
+                      <input
+                        type="checkbox"
+                        checked={includeAllergyAlert}
+                        onChange={(e) => setIncludeAllergyAlert(e.target.checked)}
+                      />
+                      <span>
+                        <strong>Share saved allergy note with kitchen</strong>
+                        <br />
+                        {[
+                          profile.allergy_flags.length > 0
+                            ? `Allergens: ${profile.allergy_flags.map(formatAllergenLabel).join(", ")}`
+                            : "",
+                          profile.disliked_ingredients
+                            ? `Avoid: ${profile.disliked_ingredients}`
+                            : "",
+                        ]
+                          .filter(Boolean)
+                          .join(" | ")}
+                      </span>
+                    </label>
+                  )}
+
+                <div style={{ marginTop: 16 }}>
+                  <label htmlFor="checkout-prep-notes" className={styles.eyebrow}>
+                    Kitchen Preparation Notes (Optional)
+                  </label>
+                  <textarea
+                    id="checkout-prep-notes"
+                    className={styles.notesField}
+                    rows={2}
+                    maxLength={300}
+                    placeholder="Optional utensils, Spice level, or pickup notes (up to 300 characters)"
+                    value={preparationNotes}
+                    onChange={(e) => setPreparationNotes(e.target.value)}
+                  />
+                </div>
+
                 <p className={styles.note}>
                   <ShieldCheckIcon size={14} style={{ display: "inline", marginRight: "6px", verticalAlign: "-2px" }} />
                   <span>
@@ -186,7 +316,8 @@ export default function CheckoutPage() {
                       ? `Dining mode: Dine-in Table Service to ${selection.tableNumber}.`
                       : "Dining mode: Your order will be prepared for Counter Pickup."}
                   </span>{" "}
-                  <Link href="/start-order?next=%2Fcheckout">Change service type</Link>
+                  <Link href="/start-order?next=%2Fcheckout">Change service type</Link>{" "}
+                  · <Link href="/customer?tab=addresses">Manage addresses</Link>
                 </p>
               </section>
 

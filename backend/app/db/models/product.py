@@ -1,7 +1,7 @@
 from datetime import datetime
 from decimal import Decimal
 
-from sqlalchemy import BigInteger, Boolean, DateTime, ForeignKey, Integer, Numeric, String, Text
+from sqlalchemy import BigInteger, Boolean, DateTime, ForeignKey, Integer, Numeric, String, Text, inspect
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.db.database import Base
@@ -25,3 +25,15 @@ class MenuProduct(Base):
     sizes: Mapped[list["MenuItemSize"]] = relationship(back_populates="product", order_by="MenuItemSize.display_order")
     addons: Mapped[list["MenuItemAddon"]] = relationship(back_populates="product", order_by="MenuItemAddon.display_order")
     ingredients: Mapped[list["MenuItemIngredient"]] = relationship(back_populates="product")
+
+    @property
+    def ingredient_names(self) -> list[str]:
+        """Return active linked ingredient names when already eager-loaded."""
+        if "ingredients" in inspect(self).unloaded:
+            return []
+        names: list[str] = []
+        for link in self.ingredients:
+            item = link.inventory_item
+            if item is not None and item.is_active and item.deleted_at is None:
+                names.append(item.name)
+        return sorted(dict.fromkeys(names))

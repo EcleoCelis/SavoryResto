@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
+import Image from "next/image";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { useAuth } from "../auth/AuthProvider";
@@ -71,6 +72,8 @@ export function Header() {
   const isOrders = pathname.startsWith("/orders");
   const isCart = pathname.startsWith("/cart");
   const isCustomer = pathname.startsWith("/customer");
+  const isLogin = pathname === "/login";
+  const isRegister = pathname === "/register";
 
   return (
     <>
@@ -157,18 +160,41 @@ export function Header() {
               aria-current={isCustomer ? "page" : undefined}
             >
               <span className={styles.userAvatar} aria-hidden="true">
-                {user.full_name.charAt(0).toUpperCase()}
+                {user.avatar_url ? (
+                  <Image
+                    src={user.avatar_url}
+                    alt=""
+                    width={24}
+                    height={24}
+                    unoptimized
+                    className={styles.userAvatarImage}
+                  />
+                ) : (
+                  user.full_name.charAt(0).toUpperCase()
+                )}
               </span>
               <span>{user.full_name.split(" ")[0]}</span>
             </Link>
           ) : (
-            <span> <Link href="/login" className={styles.signInLink}>
-              Sign in
-            </Link> | <Link href="/register" className={styles.signInLink}>
-              Sign up
-            </Link> </span>
-            
-          
+            <div className={styles.authLinks}>
+              <Link
+                href="/login"
+                className={`${styles.signInLink} ${isLogin ? styles.activeNavLink : ""}`}
+                aria-current={isLogin ? "page" : undefined}
+              >
+                Sign in
+              </Link>
+              <span className={styles.authDivider} aria-hidden="true">
+                |
+              </span>
+              <Link
+                href="/register"
+                className={`${styles.signInLink} ${isRegister ? styles.activeNavLink : ""}`}
+                aria-current={isRegister ? "page" : undefined}
+              >
+                Sign up
+              </Link>
+            </div>
           )}
 
           <Link href="/start-order" className={styles.order}>
@@ -281,9 +307,24 @@ export function Header() {
               My profile ({user.full_name.split(" ")[0]})
             </Link>
           ) : (
-            <Link href="/login" onClick={closeMenu}>
-              Sign in to your account
-            </Link>
+            <div className={styles.mobileAuthActions}>
+              <Link
+                href="/login"
+                onClick={closeMenu}
+                className={`${styles.mobileAuthBtn} ${styles.mobileSignInBtn} ${isLogin ? styles.mobileActiveLink : ""}`}
+                aria-current={isLogin ? "page" : undefined}
+              >
+                Sign in
+              </Link>
+              <Link
+                href="/register"
+                onClick={closeMenu}
+                className={`${styles.mobileAuthBtn} ${styles.mobileSignUpBtn} ${isRegister ? styles.mobileActiveLink : ""}`}
+                aria-current={isRegister ? "page" : undefined}
+              >
+                Sign up
+              </Link>
+            </div>
           )}
         </nav>
 

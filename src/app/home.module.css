@@ -40,11 +40,13 @@
   align-items: center;
   color: white;
   display: flex;
+  flex-shrink: 0;
   font-family: Georgia, serif;
   font-size: 23px;
   font-weight: 700;
   gap: 8px;
   text-decoration: none;
+  white-space: nowrap;
   transition: transform var(--motion-micro) var(--ease-standard);
 }
 
@@ -81,6 +83,7 @@
 .desktopNav a {
   position: relative;
   padding: 6px 0;
+  white-space: nowrap;
 }
 
 .desktopNav a::after {
@@ -126,10 +129,12 @@
   border-radius: var(--radius-full, 999px);
   color: white !important;
   display: inline-flex;
+  flex-shrink: 0;
   gap: 8px;
   padding: 8px 14px;
   font-size: 13px;
   font-weight: 600;
+  white-space: nowrap;
   transition: background var(--motion-micro) var(--ease-standard),
               border-color var(--motion-micro) var(--ease-standard),
               transform var(--motion-instant) var(--ease-standard);
@@ -182,6 +187,7 @@
 .ordersLink {
   font-size: 13px;
   font-weight: 600;
+  white-space: nowrap;
   transition: color var(--motion-micro) var(--ease-standard);
 }
 
@@ -192,6 +198,7 @@
 .accountPlaceholder {
   color: rgba(255, 255, 255, 0.6);
   font-size: 13px;
+  white-space: nowrap;
 }
 
 .accountLink {
@@ -200,6 +207,7 @@
   gap: 7px;
   font-size: 13px;
   font-weight: 600;
+  white-space: nowrap;
   color: white !important;
   transition: color var(--motion-micro) var(--ease-standard),
               transform var(--motion-instant) var(--ease-standard);
@@ -223,17 +231,42 @@
   font-weight: 800;
   height: 24px;
   justify-content: center;
+  overflow: hidden;
   width: 24px;
   transition: transform var(--motion-micro) var(--ease-standard);
+}
+
+.userAvatarImage {
+  height: 100%;
+  object-fit: cover;
+  width: 100%;
+  display: block;
 }
 
 .accountLink:hover .userAvatar {
   transform: scale(1.08);
 }
 
+.authLinks {
+  align-items: center;
+  display: inline-flex;
+  flex-shrink: 0;
+  gap: 10px;
+  white-space: nowrap;
+}
+
+.authDivider {
+  color: rgba(255, 255, 255, 0.38);
+  font-size: 13px;
+  line-height: 1;
+  user-select: none;
+}
+
 .signInLink {
   font-size: 13px;
   font-weight: 600;
+  padding: 6px 2px;
+  white-space: nowrap;
   transition: color var(--motion-micro) var(--ease-standard);
 }
 
@@ -251,6 +284,8 @@
   font-weight: 800;
   padding: 11px 22px;
   text-decoration: none;
+  white-space: nowrap;
+  flex-shrink: 0;
   transition: background var(--motion-micro) var(--ease-standard),
               transform var(--motion-instant) var(--ease-standard),
               box-shadow var(--motion-micro) var(--ease-standard),
@@ -399,6 +434,57 @@
   background: rgba(244, 190, 55, 0.15) !important;
   color: var(--brand-gold-bright, #f4be37) !important;
   font-weight: 700 !important;
+}
+
+.mobileAuthActions {
+  border-top: 1px solid rgba(255, 255, 255, 0.12);
+  display: grid;
+  gap: 10px;
+  grid-template-columns: 1fr 1fr;
+  margin-top: 10px;
+  padding-top: 14px;
+}
+
+.mobileNavLinks .mobileAuthBtn {
+  align-items: center;
+  border-radius: var(--radius-full, 999px);
+  display: inline-flex;
+  font-size: 14px;
+  font-weight: 700;
+  justify-content: center;
+  min-height: 44px;
+  padding: 10px 14px;
+  text-align: center;
+  transform: none;
+}
+
+.mobileNavLinks .mobileAuthBtn:hover,
+.mobileNavLinks .mobileAuthBtn:focus-visible {
+  transform: translateY(-1px);
+}
+
+.mobileSignInBtn {
+  background: rgba(255, 255, 255, 0.06);
+  border: 1px solid rgba(255, 255, 255, 0.24);
+  color: white !important;
+}
+
+.mobileSignInBtn:hover {
+  background: rgba(255, 255, 255, 0.14);
+  border-color: var(--brand-gold-bright, #f4be37);
+  color: var(--brand-gold-bright, #f4be37) !important;
+}
+
+.mobileSignUpBtn {
+  background: rgba(244, 190, 55, 0.12);
+  border: 1px solid rgba(244, 190, 55, 0.55);
+  color: var(--brand-gold-bright, #f4be37) !important;
+}
+
+.mobileSignUpBtn:hover {
+  background: rgba(244, 190, 55, 0.22);
+  border-color: var(--brand-gold-bright, #f4be37);
+  color: var(--brand-gold-bright, #f4be37) !important;
 }
 
 .mobileDrawerFooter {
@@ -1086,6 +1172,23 @@
    Responsive Media Queries
    ========================================================================== */
 
+@media (max-width: 1080px) {
+  .header {
+    gap: 16px;
+    padding: 14px clamp(16px, 3vw, 40px);
+  }
+  .headerScrolled {
+    padding: 10px clamp(16px, 3vw, 40px);
+  }
+  .desktopNav,
+  .actions {
+    gap: 14px;
+  }
+  .order {
+    padding: 9px 18px;
+  }
+}
+
 @media (max-width: 960px) {
   .categories {
     grid-template-columns: repeat(3, 1fr);
@@ -1093,6 +1196,16 @@
 }
 
 @media (max-width: 850px) {
+  .header {
+    gap: 12px;
+    padding: 12px clamp(16px, 4vw, 28px);
+  }
+  .headerScrolled {
+    padding: 10px clamp(16px, 4vw, 28px);
+  }
+  .actions {
+    gap: 12px;
+  }
   .desktopNav {
     display: none;
   }
@@ -1136,7 +1249,7 @@
   }
 }
 
-@media (max-width: 580px) {
+@media (max-width: 640px) {
   .header {
     gap: 8px;
     padding: 10px clamp(12px, 3.5vw, 16px);
@@ -1167,7 +1280,7 @@
   .ordersLink,
   .accountLink,
   .accountPlaceholder,
-  .signInLink {
+  .authLinks {
     display: none;
   }
 }

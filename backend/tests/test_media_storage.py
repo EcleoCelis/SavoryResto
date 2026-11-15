@@ -94,7 +94,9 @@ class MediaStorageUnitTests(TestCase):
         self.assertIn("empty", str(ctx.exception).lower())
 
     def test_rejects_oversized_file(self):
-        fake_large_file = b"\xff\xd8\xff" + b"\x00" * (6 * 1024 * 1024)
+        from app.core.config import settings
+
+        fake_large_file = b"\xff\xd8\xff" + b"\x00" * settings.MAX_UPLOAD_SIZE_BYTES
         with self.assertRaises(ValueError) as ctx:
             save_dish_image(fake_large_file)
         self.assertIn("exceeds", str(ctx.exception).lower())

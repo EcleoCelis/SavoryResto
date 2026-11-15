@@ -23,6 +23,9 @@
 # misc
 .DS_Store
 *.pem
+nginx/certs/*.crt
+nginx/certs/*.key
+nginx/certs/*.csr
 
 # debug
 npm-debug.log*
@@ -44,9 +47,12 @@ __pycache__/
 *$py.class
 .pytest_cache/
 
-# media & uploads
-backend/media/
+# media & uploads (track curated seeded dish images; ignore runtime uploads/avatars)
+backend/media/*
 !backend/media/.gitkeep
+!backend/media/dishes/
+backend/media/dishes/*
+!backend/media/dishes/*.webp
 
 # vercel
 .vercel

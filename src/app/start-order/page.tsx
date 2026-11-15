@@ -4,6 +4,7 @@ import Link from "next/link";
 import { Suspense, useEffect, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 
+import { useAuth } from "../../components/auth/AuthProvider";
 import { useFulfillment } from "../../components/fulfillment/FulfillmentProvider";
 import { Footer } from "../../components/layout/Footer";
 import { Header } from "../../components/layout/Header";
@@ -20,8 +21,10 @@ import styles from "./start-order.module.css";
 function StartOrderContent() {
   const router = useRouter();
   const searchParams = useSearchParams();
+  const { user } = useAuth();
   const { selection, setSelection } = useFulfillment();
-  const [orderType, setOrderType] = useState<OrderType | null>(selection?.orderType ?? null);
+  const [manualOrderType, setOrderType] = useState<OrderType | null>(selection?.orderType ?? null);
+  const orderType = manualOrderType ?? selection?.orderType ?? user?.default_order_type ?? null;
   const [tableId, setTableId] = useState<number | null>(selection?.restaurantTableId ?? null);
   const [tables, setTables] = useState<RestaurantTable[]>([]);
   const [error, setError] = useState("");

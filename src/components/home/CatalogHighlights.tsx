@@ -27,6 +27,7 @@ const categoryImages: Record<string, string> = {
 export function BestSellers() {
   const [products, setProducts] = useState<Product[]>([]);
   const [loading, setLoading] = useState(true);
+  const [failedImageIds, setFailedImageIds] = useState<Set<number>>(new Set());
 
   useEffect(() => {
     let active = true;
@@ -60,12 +61,15 @@ export function BestSellers() {
           {products.map((product) => (
             <article key={product.id}>
               <div className={styles.highlightImage}>
-                {product.image_url ? (
+                {product.image_url && !failedImageIds.has(product.id) ? (
                   <Image
                     src={product.image_url}
                     alt={product.name}
                     fill
                     sizes="(max-width: 850px) 100vw, 33vw"
+                    onError={() => {
+                      setFailedImageIds((prev) => new Set(prev).add(product.id));
+                    }}
                   />
                 ) : (
                   <span aria-label={`${product.name} image pending`}>

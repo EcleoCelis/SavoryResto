@@ -2,6 +2,7 @@ from app.db.models.address import CustomerAddress
 from app.db.models.audit_log import AuditLog
 from app.db.models.category import MenuCategory
 from app.db.models.customer import Customer
+from app.db.models.favorite import CustomerFavorite
 from app.db.models.inventory import InventoryItem, InventoryTransaction, MenuItemIngredient
 from app.db.models.password_reset_token import PasswordResetToken
 from app.db.models.product import MenuProduct
@@ -15,6 +16,7 @@ __all__ = [
     "AuditLog",
     "Customer",
     "CustomerAddress",
+    "CustomerFavorite",
     "InventoryItem",
     "InventoryTransaction",
     "MenuCategory",

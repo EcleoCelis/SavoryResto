@@ -238,6 +238,43 @@
   text-align: center;
 }
 
+.allergyBox {
+  background: #fff3cd;
+  border: 1px solid #f0ad4e;
+  border-radius: 10px;
+  color: #7c4a03;
+  display: grid;
+  font-size: 12px;
+  gap: 2px;
+  margin-bottom: 10px;
+  padding: 9px 11px;
+}
+
+.allergyBox strong {
+  font-size: 11px;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+}
+
+.notesBox {
+  background: #f2f5f3;
+  border: 1px solid #d5e0da;
+  border-radius: 10px;
+  color: #1f3b2e;
+  display: grid;
+  font-size: 12px;
+  gap: 2px;
+  margin-bottom: 10px;
+  padding: 9px 11px;
+}
+
+.notesBox strong {
+  font-size: 11px;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+  color: #4f665b;
+}
+
 .message {
   background: #122c20;
   border: 1px solid #234b37;

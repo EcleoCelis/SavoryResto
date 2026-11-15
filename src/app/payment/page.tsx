@@ -10,11 +10,14 @@ import { Footer } from "../../components/layout/Footer";
 import { Header } from "../../components/layout/Header";
 import { ArrowLeftIcon, CheckIcon, ShieldCheckIcon } from "../../components/ui/Icons";
 import { CheckoutApiError, quoteCheckout } from "../../lib/api/checkout";
+import { getCustomerProfile } from "../../lib/api/customer";
 import { createOrder, OrderApiError } from "../../lib/api/orders";
 import { getPaymentMethods } from "../../lib/api/payment-methods";
 import type { CheckoutQuote } from "../../types/checkout";
 import type { PaymentMethod } from "../../types/payment-method";
 import styles from "../checkout/checkout.module.css";
+
+const CHECKOUT_EXTRAS_STORAGE_KEY = "savorybites_checkout_extras";
 
 const currencyFormatter = new Intl.NumberFormat("en-PH", {
   style: "currency",
@@ -45,7 +48,7 @@ export default function PaymentPage() {
       setIsLoading(true);
       setError("");
       try {
-        const [loadedQuote, loadedPaymentMethods] = await Promise.all([
+        const [loadedQuote, loadedPaymentMethods, loadedProfile] = await Promise.all([
           quoteCheckout({
             items: items.map((item) => ({
               cart_line_id: item.lineId,
@@ -56,6 +59,7 @@ export default function PaymentPage() {
             })),
           }),
           getPaymentMethods(),
+          getCustomerProfile().catch(() => null),
         ]);
         if (!active) return;
         if (loadedPaymentMethods.length === 0) {
@@ -64,11 +68,19 @@ export default function PaymentPage() {
         }
         setQuote(loadedQuote);
         setPaymentMethods(loadedPaymentMethods);
-        setSelectedPaymentMethodCode((currentCode) =>
-          loadedPaymentMethods.some((method) => method.code === currentCode)
-            ? currentCode
-            : loadedPaymentMethods[0]?.code ?? ""
+        const preferredCode = loadedProfile?.preferred_payment_code ?? "";
+        const preferredIsValid = Boolean(
+          preferredCode && loadedPaymentMethods.some((method) => method.code === preferredCode)
         );
+        setSelectedPaymentMethodCode((currentCode) => {
+          if (currentCode && loadedPaymentMethods.some((method) => method.code === currentCode)) {
+            return currentCode;
+          }
+          if (preferredIsValid) {
+            return preferredCode;
+          }
+          return loadedPaymentMethods[0]?.code ?? "";
+        });
       } catch (requestError) {
         if (!active) return;
         if (requestError instanceof CheckoutApiError && requestError.status === 401) {
@@ -96,6 +108,22 @@ export default function PaymentPage() {
     setError("");
     idempotencyKey.current ??= crypto.randomUUID();
     try {
+      let checkoutExtras: {
+        selectedAddressId?: number | null;
+        includeAllergyAlert?: boolean;
+        preparationNotes?: string | null;
+      } = {};
+      if (typeof window !== "undefined") {
+        try {
+          const raw = window.sessionStorage.getItem(CHECKOUT_EXTRAS_STORAGE_KEY);
+          if (raw) {
+            checkoutExtras = JSON.parse(raw) as typeof checkoutExtras;
+          }
+        } catch {
+          checkoutExtras = {};
+        }
+      }
+
       const order = await createOrder(
         {
           items: items.map((item) => ({
@@ -109,9 +137,19 @@ export default function PaymentPage() {
           order_type: selection.orderType,
           fulfillment_type: selection.fulfillmentType,
           restaurant_table_id: selection.restaurantTableId,
+          selected_address_id: checkoutExtras.selectedAddressId ?? null,
+          include_allergy_alert: checkoutExtras.includeAllergyAlert ?? true,
+          preparation_notes: checkoutExtras.preparationNotes ?? null,
         },
         idempotencyKey.current
       );
+      if (typeof window !== "undefined") {
+        try {
+          window.sessionStorage.removeItem(CHECKOUT_EXTRAS_STORAGE_KEY);
+        } catch {
+          // Ignore storage cleanup failure.
+        }
+      }
       clearCart();
       clearSelection();
       router.push(`/order-confirmation/${order.id}`);

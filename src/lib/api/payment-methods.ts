@@ -1,6 +1,5 @@
 import type { PaymentMethod } from "../../types/payment-method";
-
-const apiUrl = process.env.NEXT_PUBLIC_API_URL || "http://127.0.0.1:8001";
+import { getApiBaseUrl } from "./base-url";
 
 export class PaymentMethodApiError extends Error {
   constructor(public status: number, message: string) {
@@ -9,7 +8,7 @@ export class PaymentMethodApiError extends Error {
 }
 
 export async function getPaymentMethods(): Promise<PaymentMethod[]> {
-  const response = await fetch(`${apiUrl}/api/v1/payment-methods`);
+  const response = await fetch(`${getApiBaseUrl()}/api/v1/payment-methods`);
   const data: unknown = await response.json().catch(() => null);
   if (!response.ok) {
     const detail = typeof data === "object" && data !== null && "detail" in data ? data.detail : null;

@@ -34,16 +34,19 @@ services:
         condition: service_healthy
     environment:
       ENVIRONMENT: staging
+      COOKIE_SECURE: ${COOKIE_SECURE:-true}
       DATABASE_URL: postgresql+psycopg://${POSTGRES_USER:-postgres}:${POSTGRES_PASSWORD:-StagingPostgresPass2026!}@postgres:5432/${POSTGRES_DB:-restaurant_db_staging}
       FRONTEND_URL: ${FRONTEND_URL:-https://staging.savorybites.local:8443}
       JWT_SECRET_KEY: ${JWT_SECRET_KEY:-staging-secret-key-at-least-32-chars-long-2026!}
-      TRUSTED_PROXIES: ${TRUSTED_PROXIES:-127.0.0.1,::1,nginx}
+      TRUSTED_PROXIES: ${TRUSTED_PROXIES:-127.0.0.1,::1,10.0.0.0/8,172.16.0.0/12,192.168.0.0/16}
       ALLOWED_CORS_ORIGINS: ${ALLOWED_CORS_ORIGINS:-https://staging.savorybites.local:8443,http://localhost:3000}
       SMTP_HOST: ${SMTP_HOST:-}
       SMTP_PORT: ${SMTP_PORT:-587}
       SMTP_USER: ${SMTP_USER:-}
       SMTP_PASSWORD: ${SMTP_PASSWORD:-}
       EMAILS_FROM_EMAIL: ${EMAILS_FROM_EMAIL:-noreply@savorybites.staging}
+    volumes:
+      - media_staging_data:/app/media
     command: >
       sh -c "python scripts/init_staging_db.py &&
              python -m uvicorn app.main:app --host 0.0.0.0 --port 8000"
@@ -66,10 +69,12 @@ services:
     container_name: savorybites_staging_frontend
     restart: unless-stopped
     depends_on:
-      - backend
+      backend:
+        condition: service_healthy
     environment:
       NODE_ENV: production
       PORT: 3000
+      BACKEND_INTERNAL_URL: http://backend:8000
     expose:
       - "3000"
     healthcheck:
@@ -102,3 +107,4 @@ networks:
 
 volumes:
   postgres_staging_data:
+  media_staging_data:

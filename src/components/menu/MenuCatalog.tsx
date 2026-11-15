@@ -7,8 +7,18 @@ import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import { useEffect, useRef, useState } from "react";
 
 import styles from "../../app/menu/menu.module.css";
+import { useAuth } from "../auth/AuthProvider";
+import {
+  addCustomerFavorite,
+  getCustomerFavorites,
+  getCustomerProfile,
+  removeCustomerFavorite,
+} from "../../lib/api/customer";
 import { getCategories, getProducts } from "../../lib/api/products";
-import { PlusIcon, SearchIcon } from "../ui/Icons";
+import { detectDishConflicts } from "../../lib/personalization";
+import { HeartIcon, PlusIcon, SearchIcon } from "../ui/Icons";
+import { AllergyConflictNotice } from "./AllergyConflictNotice";
+import type { CustomerProfile } from "../../types/customer";
 import type { Category, Product } from "../../types/product";
 
 const currencyFormatter = new Intl.NumberFormat("en-PH", {
@@ -36,11 +46,14 @@ export function MenuCatalog() {
   const categoryId = parseCategoryId(searchParams.get("category"));
   const search = searchParams.get("search")?.trim() ?? "";
   const availability = parseAvailability(searchParams.get("availability"));
+  const { isAuthenticated } = useAuth();
   const [categories, setCategories] = useState<Category[]>([]);
   const [products, setProducts] = useState<Product[]>([]);
+  const [favoriteIds, setFavoriteIds] = useState<Set<number>>(new Set());
+  const [failedImageIds, setFailedImageIds] = useState<Set<number>>(new Set());
+  const [customerProfile, setCustomerProfile] = useState<CustomerProfile | null>(null);
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(true);
-  const [isCategorySheetOpen, setIsCategorySheetOpen] = useState(false);
   const categoryNavRef = useRef<HTMLElement>(null);
   const searchInputRef = useRef<HTMLInputElement>(null);
 
@@ -80,29 +93,76 @@ export function MenuCatalog() {
     router.replace(pathname, { scroll: false });
   }
 
-  // Close mobile category sheet on Escape key
+  // Keep the selected tab visible in the horizontal category strip (mobile/tablet).
+  // Scrolls only the strip itself — never the page — and only when the tab is off-screen.
   useEffect(() => {
-    function handleKeyDown(event: KeyboardEvent) {
-      if (event.key === "Escape") {
-        setIsCategorySheetOpen(false);
-      }
+    if (!isAuthenticated) {
+      return;
     }
-    if (isCategorySheetOpen) {
-      document.addEventListener("keydown", handleKeyDown);
-    }
+    let active = true;
+    void Promise.all([getCustomerFavorites(), getCustomerProfile()])
+      .then(([favorites, profile]) => {
+        if (!active) return;
+        setFavoriteIds(new Set(favorites.map((fav) => fav.product_id)));
+        setCustomerProfile(profile);
+      })
+      .catch(() => {
+        // Ignore silent personalization load failures on public catalog.
+      });
     return () => {
-      document.removeEventListener("keydown", handleKeyDown);
+      active = false;
     };
-  }, [isCategorySheetOpen]);
+  }, [isAuthenticated]);
 
-  // Smoothly center the active category pill into view on mobile horizontal rail
-  useEffect(() => {
-    if (!categoryNavRef.current) return;
-    const activeBtn = categoryNavRef.current.querySelector<HTMLElement>(`.${styles.categoryItemActive}`);
-    if (activeBtn) {
-      activeBtn.scrollIntoView({ behavior: "smooth", block: "nearest", inline: "center" });
+  const activeFavoriteIds = isAuthenticated ? favoriteIds : new Set<number>();
+  const activeProfile = isAuthenticated ? customerProfile : null;
+
+  async function handleToggleFavorite(productId: number) {
+    if (!isAuthenticated) {
+      router.push(`/login?next=${encodeURIComponent("/menu")}`);
+      return;
     }
-  }, [categoryId]);
+    const wasFav = favoriteIds.has(productId);
+    setFavoriteIds((prev) => {
+      const next = new Set(prev);
+      if (wasFav) next.delete(productId);
+      else next.add(productId);
+      return next;
+    });
+    try {
+      if (wasFav) {
+        await removeCustomerFavorite(productId);
+      } else {
+        await addCustomerFavorite(productId);
+      }
+    } catch {
+      setFavoriteIds((prev) => {
+        const reverted = new Set(prev);
+        if (wasFav) reverted.add(productId);
+        else reverted.delete(productId);
+        return reverted;
+      });
+    }
+  }
+
+  useEffect(() => {
+    const nav = categoryNavRef.current;
+    if (!nav || nav.scrollWidth <= nav.clientWidth) return; // desktop rail / no overflow
+    const activeTab = nav.querySelector<HTMLElement>('button[aria-pressed="true"]');
+    if (!activeTab) return;
+
+    const navRect = nav.getBoundingClientRect();
+    const tabRect = activeTab.getBoundingClientRect();
+    const edgeAllowance = 24; // width of the right-edge fade
+    const isFullyVisible = tabRect.left >= navRect.left && tabRect.right <= navRect.right - edgeAllowance;
+    if (isFullyVisible) return;
+
+    const prefersReducedMotion = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+    nav.scrollBy({
+      left: tabRect.left + tabRect.width / 2 - (navRect.left + navRect.width / 2),
+      behavior: prefersReducedMotion ? "instant" : "smooth",
+    });
+  }, [categoryId, categories]);
 
   useEffect(() => {
     let active = true;
@@ -156,23 +216,8 @@ export function MenuCatalog() {
           <span className={styles.categoryBadge}>{categories.length}</span>
         </div>
 
-        {/* Mobile Category Trigger (Opens full discoverable category sheet) */}
+        {/* Single row of horizontally scrollable category tabs (mobile/tablet); vertical rail on desktop */}
         <div className={styles.mobileCategoryBar}>
-          <button
-            type="button"
-            className={styles.mobileCategorySelectorBtn}
-            onClick={() => setIsCategorySheetOpen(true)}
-            aria-haspopup="dialog"
-            aria-expanded={isCategorySheetOpen}
-            aria-label="Browse all menu categories in full list"
-          >
-            <span className={styles.selectorIcon} aria-hidden="true">☰</span>
-            <span className={styles.selectorLabel}>{activeCategoryName}</span>
-            <span className={styles.selectorBadge}>{categories.length}</span>
-            <span className={styles.selectorChevron} aria-hidden="true">▾</span>
-          </button>
-
-          {/* Mobile Quick Category Rail */}
           <nav ref={categoryNavRef} className={styles.categoryNav} aria-label="Filter by category">
             <button
               type="button"
@@ -180,7 +225,7 @@ export function MenuCatalog() {
               onClick={() => updateQuery({ category: null })}
               aria-pressed={categoryId === null}
             >
-              <span>All</span>
+              <span className={styles.categoryLabel}>All</span>
             </button>
             {categories.map((category) => {
               const isActive = categoryId === category.id;
@@ -192,76 +237,13 @@ export function MenuCatalog() {
                   onClick={() => updateQuery({ category: category.id })}
                   aria-pressed={isActive}
                 >
-                  <span>{category.name}</span>
+                  <span className={styles.categoryLabel}>{category.name}</span>
                 </button>
               );
             })}
           </nav>
         </div>
       </aside>
-
-      {/* Accessible Mobile Category Bottom Sheet Dialog */}
-      {isCategorySheetOpen && (
-        <div
-          className={styles.sheetOverlay}
-          onClick={() => setIsCategorySheetOpen(false)}
-          aria-hidden="true"
-        >
-          <div
-            className={styles.sheetDialog}
-            role="dialog"
-            aria-modal="true"
-            aria-labelledby="category-sheet-title"
-            onClick={(e) => e.stopPropagation()}
-          >
-            <div className={styles.sheetHeader}>
-              <h3 id="category-sheet-title">Select Menu Category</h3>
-              <button
-                type="button"
-                className={styles.sheetCloseBtn}
-                onClick={() => setIsCategorySheetOpen(false)}
-                aria-label="Close category list"
-              >
-                ✕
-              </button>
-            </div>
-            <div className={styles.sheetCategoryList} role="listbox" aria-label="Menu categories">
-              <button
-                type="button"
-                className={`${styles.sheetCategoryItem} ${categoryId === null ? styles.sheetCategoryItemActive : ""}`}
-                onClick={() => {
-                  updateQuery({ category: null });
-                  setIsCategorySheetOpen(false);
-                }}
-                role="option"
-                aria-selected={categoryId === null}
-              >
-                <span className={styles.sheetCategoryName}>All Categories</span>
-                {categoryId === null && <span className={styles.activeCheckmark} aria-hidden="true">✓</span>}
-              </button>
-              {categories.map((cat) => {
-                const isActive = categoryId === cat.id;
-                return (
-                  <button
-                    key={cat.id}
-                    type="button"
-                    className={`${styles.sheetCategoryItem} ${isActive ? styles.sheetCategoryItemActive : ""}`}
-                    onClick={() => {
-                      updateQuery({ category: cat.id });
-                      setIsCategorySheetOpen(false);
-                    }}
-                    role="option"
-                    aria-selected={isActive}
-                  >
-                    <span className={styles.sheetCategoryName}>{cat.name}</span>
-                    {isActive && <span className={styles.activeCheckmark} aria-hidden="true">✓</span>}
-                  </button>
-                );
-              })}
-            </div>
-          </div>
-        </div>
-      )}
 
       {/* Main Content Area */}
       <div className={styles.catalogMain}>
@@ -347,54 +329,74 @@ export function MenuCatalog() {
 
         {/* Product Grid */}
         <div className={styles.grid}>
-          {products.map((product) => (
-            <article
-              key={product.id}
-              className={`${styles.card} ${!product.is_available ? styles.unavailableCard : ""}`}
-            >
-              <Link
-                href={`/menu/${product.id}`}
-                className={styles.itemImage}
-                tabIndex={-1}
-                aria-hidden="true"
+          {products.map((product) => {
+            const isFavorite = activeFavoriteIds.has(product.id);
+            const conflicts = detectDishConflicts(product, activeProfile);
+            return (
+              <article
+                key={product.id}
+                className={`${styles.card} ${!product.is_available ? styles.unavailableCard : ""}`}
               >
-                {product.image_url ? (
-                  <Image
-                    src={product.image_url}
-                    alt={product.name}
-                    sizes="(max-width: 680px) 84px, 104px"
-                    fill
-                  />
-                ) : (
-                  <span className={styles.imageFallback} aria-label={`${product.name} image pending`}>
-                    {product.name.slice(0, 1)}
-                  </span>
-                )}
-              </Link>
-
-              <div className={styles.cardBody}>
-                <Link href={`/menu/${product.id}`} className={styles.itemDetails}>
-                  <h2>{product.name}</h2>
-                  <p>{product.description || "Freshly prepared and ready to enjoy."}</p>
-                </Link>
-                <div className={styles.priceRow}>
-                  <b>{currencyFormatter.format(product.price)}</b>
-                  {product.is_available ? (
-                    <Link
-                      href={`/menu/${product.id}`}
-                      className={styles.addLink}
-                      aria-label={`Select options and add ${product.name} to cart`}
-                    >
-                      <PlusIcon size={12} style={{ display: "inline", marginRight: "3px", verticalAlign: "-1px" }} />
-                      <span>Add</span>
-                    </Link>
+                <Link
+                  href={`/menu/${product.id}`}
+                  className={styles.itemImage}
+                  tabIndex={-1}
+                  aria-hidden="true"
+                >
+                  {product.image_url && !failedImageIds.has(product.id) ? (
+                    <Image
+                      src={product.image_url}
+                      alt={product.name}
+                      sizes="(max-width: 680px) 84px, 104px"
+                      fill
+                      onError={() => {
+                        setFailedImageIds((prev) => new Set(prev).add(product.id));
+                      }}
+                    />
                   ) : (
-                    <span className={styles.unavailableLabel}>Unavailable</span>
+                    <span className={styles.imageFallback} aria-label={`${product.name} image pending`}>
+                      {product.name.slice(0, 1)}
+                    </span>
                   )}
+                </Link>
+
+                <div className={styles.cardBody}>
+                  <div className={styles.cardTopRow}>
+                    <Link href={`/menu/${product.id}`} className={styles.itemDetails}>
+                      <h2>{product.name}</h2>
+                      <p>{product.description || "Freshly prepared and ready to enjoy."}</p>
+                    </Link>
+                    <button
+                      type="button"
+                      className={`${styles.favoriteBtn} ${isFavorite ? styles.favoriteBtnActive : ""}`}
+                      onClick={() => void handleToggleFavorite(product.id)}
+                      aria-label={isFavorite ? `Remove ${product.name} from favorites` : `Save ${product.name} to favorites`}
+                      aria-pressed={isFavorite}
+                      title={isAuthenticated ? (isFavorite ? "Remove from favorites" : "Save to favorites") : "Sign in to save favorites"}
+                    >
+                      <HeartIcon size={16} filled={isFavorite} />
+                    </button>
+                  </div>
+                  <AllergyConflictNotice conflicts={conflicts} compact />
+                  <div className={styles.priceRow}>
+                    <b>{currencyFormatter.format(product.price)}</b>
+                    {product.is_available ? (
+                      <Link
+                        href={`/menu/${product.id}`}
+                        className={styles.addLink}
+                        aria-label={`Select options and add ${product.name} to cart`}
+                      >
+                        <PlusIcon size={12} style={{ display: "inline", marginRight: "3px", verticalAlign: "-1px" }} />
+                        <span>Add</span>
+                      </Link>
+                    ) : (
+                      <span className={styles.unavailableLabel}>Unavailable</span>
+                    )}
+                  </div>
                 </div>
-              </div>
-            </article>
-          ))}
+              </article>
+            );
+          })}
         </div>
 
         {!loading && products.length === 0 ? (

@@ -6,9 +6,10 @@ import { useRouter } from "next/navigation";
 
 import { Footer } from "../../components/layout/Footer";
 import { Header } from "../../components/layout/Header";
-import { ArrowLeftIcon, ArrowRightIcon } from "../../components/ui/Icons";
+import { ArrowLeftIcon, ArrowRightIcon, RefreshIcon } from "../../components/ui/Icons";
 import { getOrders, OrderApiError } from "../../lib/api/orders";
 import { orderStatusLabel } from "../../lib/order-status";
+import { reorderToCart } from "../../lib/reorder";
 import type { OrderHistory } from "../../types/order";
 import styles from "./orders.module.css";
 
@@ -28,6 +29,8 @@ export default function OrdersPage() {
   const [error, setError] = useState("");
   const [page, setPage] = useState(1);
   const [retry, setRetry] = useState(0);
+  const [reorderingId, setReorderingId] = useState<number | null>(null);
+  const [reorderError, setReorderError] = useState("");
 
   useEffect(() => {
     let active = true;
@@ -62,6 +65,23 @@ export default function OrdersPage() {
     setPage(nextPage);
   }
 
+  async function handleReorder(orderId: number) {
+    setReorderingId(orderId);
+    setReorderError("");
+    try {
+      const result = await reorderToCart(orderId);
+      if (result.addedCount === 0) {
+        setReorderError(result.summaryMessage);
+      } else {
+        router.push("/cart");
+      }
+    } catch (err) {
+      setReorderError(err instanceof Error ? err.message : "Unable to reorder items.");
+    } finally {
+      setReorderingId(null);
+    }
+  }
+
   return (
     <div className={styles.page}>
       <Header />
@@ -92,24 +112,41 @@ export default function OrdersPage() {
           </section>
         ) : (
           <>
+            {reorderError && (
+              <div className={styles.message} role="alert" style={{ marginBottom: 18, padding: "14px 20px" }}>
+                <p style={{ margin: 0 }}>{reorderError}</p>
+              </div>
+            )}
             <div className={styles.orders} aria-label="List of past orders">
               {history.items.map((order) => (
                 <article key={order.id}>
                   <div>
                     <p className={styles.number}>Order #{order.order_number}</p>
                     <p>
-                      {dateFormatter.format(new Date(order.ordered_at))} · {order.item_count}{" "}
-                      {order.item_count === 1 ? "dish" : "dishes"}
+                      {dateFormatter.format(new Date(order.ordered_at))}
+                      {order.payment_method_label ? ` · ${order.payment_method_label}` : ""} ·{" "}
+                      {order.item_count} {order.item_count === 1 ? "dish" : "dishes"}
                     </p>
                   </div>
                   <span className={`${styles.status} ${styles[order.status] || ""}`}>
                     {orderStatusLabel(order.status)}
                   </span>
                   <strong>{currencyFormatter.format(order.total)}</strong>
-                  <Link href={`/order-confirmation/${order.id}`}>
-                    <span>View order</span>
-                    <ArrowRightIcon size={14} style={{ display: "inline", marginLeft: "4px", verticalAlign: "-2px" }} />
-                  </Link>
+                  <div className={styles.orderActions}>
+                    <button
+                      type="button"
+                      className={styles.reorderBtn}
+                      onClick={() => void handleReorder(order.id)}
+                      disabled={reorderingId === order.id}
+                    >
+                      <RefreshIcon size={13} />
+                      <span>{reorderingId === order.id ? "Checking..." : "Order Again"}</span>
+                    </button>
+                    <Link href={`/order-confirmation/${order.id}`}>
+                      <span>View order</span>
+                      <ArrowRightIcon size={14} style={{ display: "inline", marginLeft: "4px", verticalAlign: "-2px" }} />
+                    </Link>
+                  </div>
                 </article>
               ))}
             </div>

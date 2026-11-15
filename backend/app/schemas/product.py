@@ -25,6 +25,7 @@ class ProductResponse(BaseModel):
     category: CategoryResponse
     sizes: list[ProductOptionResponse]
     addons: list[ProductOptionResponse]
+    ingredient_names: list[str] = Field(default_factory=list)
 
 
 class ProductCreate(BaseModel):

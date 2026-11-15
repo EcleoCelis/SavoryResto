@@ -138,7 +138,7 @@ def get_current_customer(
         .first()
     )
 
-    if customer is None:
+    if customer is None or not getattr(customer, "is_active", True):
         raise credentials_exception
 
     if customer.password_changed_at is not None:
@@ -180,7 +180,7 @@ def get_optional_current_customer(
         .filter(Customer.customer_id == customer_id)
         .first()
     )
-    if customer is None:
+    if customer is None or not getattr(customer, "is_active", True):
         return None
 
     if customer.password_changed_at is not None:

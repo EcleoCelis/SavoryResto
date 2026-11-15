@@ -1,3 +1,4 @@
+import html
 import logging
 import smtplib
 from email.mime.multipart import MIMEMultipart
@@ -63,11 +64,13 @@ class EmailService:
             f"— The SavoryBites Team\n"
         )
 
+        safe_first_name = html.escape(first_name)
+        safe_reset_url = html.escape(reset_url, quote=True)
         html_body = f"""<!DOCTYPE html>
 <html>
 <head>
   <meta charset="utf-8">
-  <title>{subject}</title>
+  <title>{html.escape(subject)}</title>
 </head>
 <body style="font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif; background-color: #f8f4ec; margin: 0; padding: 32px 16px; color: #1c1c1c;">
   <table width="100%" border="0" cellspacing="0" cellpadding="0" style="max-width: 560px; margin: 0 auto; background: #ffffff; border-radius: 12px; border: 1px solid #e5e0d6; overflow: hidden; box-shadow: 0 4px 18px rgba(23,63,53,0.06);">
@@ -80,13 +83,13 @@ class EmailService:
       <td style="padding: 32px;">
         <h2 style="font-family: Georgia, serif; font-size: 24px; color: #173f35; margin: 0 0 16px;">Password Reset Request</h2>
         <p style="font-size: 15px; line-height: 1.6; color: #4a4a44; margin: 0 0 20px;">
-          Hello {first_name},
+          Hello {safe_first_name},
         </p>
         <p style="font-size: 15px; line-height: 1.6; color: #4a4a44; margin: 0 0 24px;">
           We received a request to reset the password for your SavoryBites account. Click the button below to choose a new password:
         </p>
         <div style="text-align: center; margin: 32px 0;">
-          <a href="{reset_url}" style="background-color: #173f35; color: #ffffff; padding: 14px 28px; text-decoration: none; border-radius: 8px; font-weight: bold; font-size: 15px; display: inline-block;">
+          <a href="{safe_reset_url}" style="background-color: #173f35; color: #ffffff; padding: 14px 28px; text-decoration: none; border-radius: 8px; font-weight: bold; font-size: 15px; display: inline-block;">
             Reset Your Password
           </a>
         </div>
@@ -94,7 +97,7 @@ class EmailService:
           If the button above does not work, copy and paste this link into your browser:
         </p>
         <p style="font-size: 12px; line-height: 1.5; color: #173f35; word-break: break-all; margin: 0 0 24px;">
-          <a href="{reset_url}" style="color: #2e6b5b;">{reset_url}</a>
+          <a href="{safe_reset_url}" style="color: #2e6b5b;">{safe_reset_url}</a>
         </p>
         <p style="font-size: 13px; line-height: 1.6; color: #888880; border-top: 1px solid #eee; padding-top: 20px; margin: 0;">
           This link will expire in <strong>{expire_minutes} minutes</strong> and can only be used once.<br>
@@ -160,7 +163,7 @@ class EmailService:
 <html>
 <head>
   <meta charset="utf-8">
-  <title>{clean_subject}</title>
+  <title>{html.escape(clean_subject)}</title>
 </head>
 <body style="font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif; background-color: #f8f4ec; margin: 0; padding: 32px 16px; color: #1c1c1c;">
   <table width="100%" border="0" cellspacing="0" cellpadding="0" style="max-width: 600px; margin: 0 auto; background: #ffffff; border-radius: 12px; border: 1px solid #e5e0d6; overflow: hidden; box-shadow: 0 4px 18px rgba(23,63,53,0.06);">
@@ -175,15 +178,15 @@ class EmailService:
         <table style="width: 100%; border-collapse: collapse; margin-bottom: 24px; font-size: 14px;">
           <tr>
             <td style="padding: 8px 0; color: #6b6b63; width: 120px;"><strong>From:</strong></td>
-            <td style="padding: 8px 0; color: #1c1c1c;">{clean_name} ({clean_email})</td>
+            <td style="padding: 8px 0; color: #1c1c1c;">{html.escape(clean_name)} ({html.escape(clean_email)})</td>
           </tr>
           <tr>
             <td style="padding: 8px 0; color: #6b6b63;"><strong>Subject:</strong></td>
-            <td style="padding: 8px 0; color: #1c1c1c;">{subject.strip()}</td>
+            <td style="padding: 8px 0; color: #1c1c1c;">{html.escape(subject.strip())}</td>
           </tr>
         </table>
         <div style="background-color: #fbf9f4; border: 1px solid #e5e0d6; border-radius: 8px; padding: 18px 20px; font-size: 14px; line-height: 1.6; color: #2e3b33; white-space: pre-wrap;">
-{message.strip()}
+{html.escape(message.strip())}
         </div>
       </td>
     </tr>
@@ -214,6 +217,66 @@ class EmailService:
             html_body=html_body,
             reply_to=clean_email,
         )
+
+    def send_order_confirmation_email(
+        self,
+        to_email: str,
+        customer_name: str,
+        order_number: str,
+        total_formatted: str,
+        fulfillment_summary: str,
+    ) -> bool:
+        """Send an order confirmation email when customer email updates are enabled."""
+        first_name = customer_name.split()[0] if customer_name else "Valued Customer"
+        subject = f"SavoryBites Order Confirmation #{order_number}"
+        text_body = (
+            f"Hello {first_name},\n\n"
+            f"Thank you for your SavoryBites order #{order_number}.\n"
+            f"Service: {fulfillment_summary}\n"
+            f"Total: {total_formatted}\n\n"
+            f"You can follow live kitchen status updates anytime in your SavoryBites account.\n\n"
+            f"— The SavoryBites Team\n"
+        )
+        html_body = (
+            f"<p>Hello {html.escape(first_name)},</p>"
+            f"<p>Thank you for your SavoryBites order <strong>#{html.escape(order_number)}</strong>.</p>"
+            f"<p><strong>Service:</strong> {html.escape(fulfillment_summary)}<br>"
+            f"<strong>Total:</strong> {html.escape(total_formatted)}</p>"
+            f"<p>You can follow live kitchen updates in your SavoryBites order history.</p>"
+        )
+        self.outbox.append(EmailMessageRecord(to_email=to_email, subject=subject, text_body=text_body, html_body=html_body))
+        if not settings.SMTP_HOST:
+            logger.info("SMTP not configured. Mock order confirmation email logged for order %s.", order_number)
+            return True
+        return self._send_smtp_message(to_email=to_email, subject=subject, text_body=text_body, html_body=html_body)
+
+    def send_security_alert_email(
+        self,
+        to_email: str,
+        customer_name: str,
+        event_summary: str,
+    ) -> bool:
+        """Send a security notice when customer password, email, or account status changes."""
+        first_name = customer_name.split()[0] if customer_name else "Valued Customer"
+        subject = "SavoryBites Security Notification"
+        text_body = (
+            f"Hello {first_name},\n\n"
+            f"This is a security notification regarding your SavoryBites account:\n"
+            f"{event_summary}\n\n"
+            f"If you did not perform this change, please contact us or reset your password immediately.\n\n"
+            f"— SavoryBites Security\n"
+        )
+        html_body = (
+            f"<p>Hello {html.escape(first_name)},</p>"
+            f"<p>Security notice for your SavoryBites account:</p>"
+            f"<p><strong>{html.escape(event_summary)}</strong></p>"
+            f"<p>If you did not authorize this change, please reset your password immediately.</p>"
+        )
+        self.outbox.append(EmailMessageRecord(to_email=to_email, subject=subject, text_body=text_body, html_body=html_body))
+        if not settings.SMTP_HOST:
+            logger.info("SMTP not configured. Mock security alert email logged for %s.", to_email)
+            return True
+        return self._send_smtp_message(to_email=to_email, subject=subject, text_body=text_body, html_body=html_body)
 
     def _send_smtp_message(
         self,

@@ -7,26 +7,75 @@ const scriptSrc = isProduction
   : "'self' 'unsafe-inline' 'unsafe-eval'";
 
 const apiUrl = process.env.NEXT_PUBLIC_API_URL?.trim();
-const connectSrc = [
-  "'self'",
-  "http://localhost:8000",
-  "http://127.0.0.1:8000",
-  "http://localhost:8001",
-  "http://127.0.0.1:8001",
-  ...(apiUrl ? [apiUrl] : []),
-].join(" ");
+let parsedApiUrl: URL | null = null;
+if (apiUrl) {
+  try {
+    parsedApiUrl = new URL(apiUrl);
+  } catch {
+    parsedApiUrl = null;
+  }
+}
+
+const devLoopbackOrigins = isProduction
+  ? []
+  : [
+      "http://localhost:8000",
+      "http://127.0.0.1:8000",
+      "http://localhost:8001",
+      "http://127.0.0.1:8001",
+    ];
+
+const connectSrc = Array.from(
+  new Set([
+    "'self'",
+    ...devLoopbackOrigins,
+    ...(parsedApiUrl ? [parsedApiUrl.origin] : []),
+  ])
+).join(" ");
+
+const imgSrc = Array.from(
+  new Set([
+    "'self'",
+    "data:",
+    "blob:",
+    ...devLoopbackOrigins,
+    ...(parsedApiUrl ? [parsedApiUrl.origin] : []),
+  ])
+).join(" ");
 
 const cspHeader = [
   "default-src 'self'",
   `script-src ${scriptSrc}`,
   "style-src 'self' 'unsafe-inline' https://fonts.googleapis.com",
-  "img-src 'self' data: blob: http://localhost:8001 http://127.0.0.1:8001 http://localhost:8000 http://127.0.0.1:8000",
+  `img-src ${imgSrc}`,
   "font-src 'self' data: https://fonts.gstatic.com",
   `connect-src ${connectSrc}`,
   "frame-ancestors 'none'",
   "base-uri 'self'",
   "form-action 'self'",
 ].join("; ");
+
+const remotePatterns: NonNullable<NextConfig["images"]>["remotePatterns"] = [
+  {
+    protocol: "http",
+    hostname: "localhost",
+  },
+  {
+    protocol: "http",
+    hostname: "127.0.0.1",
+  },
+];
+
+if (
+  parsedApiUrl &&
+  (parsedApiUrl.protocol === "http:" || parsedApiUrl.protocol === "https:")
+) {
+  remotePatterns.push({
+    protocol: parsedApiUrl.protocol === "https:" ? "https" : "http",
+    hostname: parsedApiUrl.hostname,
+    ...(parsedApiUrl.port ? { port: parsedApiUrl.port } : {}),
+  });
+}
 
 const nextConfig: NextConfig = {
   output: "standalone",
@@ -35,16 +84,7 @@ const nextConfig: NextConfig = {
   reactCompiler: true,
   poweredByHeader: false,
   images: {
-    remotePatterns: [
-      {
-        protocol: "http",
-        hostname: "localhost",
-      },
-      {
-        protocol: "http",
-        hostname: "127.0.0.1",
-      },
-    ],
+    remotePatterns,
   },
   async redirects() {
     return [
@@ -56,7 +96,10 @@ const nextConfig: NextConfig = {
     ];
   },
   async rewrites() {
-    const backendOrigin = process.env.NEXT_PUBLIC_API_URL?.trim() || "http://127.0.0.1:8001";
+    const backendOrigin =
+      process.env.BACKEND_INTERNAL_URL?.trim().replace(/\/+$/, "") ||
+      parsedApiUrl?.origin ||
+      "http://127.0.0.1:8001";
     return [
       {
         source: "/api/:path*",

@@ -1,6 +1,5 @@
 import type { CheckoutCustomer, CheckoutQuoteLine, CheckoutQuoteRequest } from "../../types/checkout";
-
-const apiUrl = process.env.NEXT_PUBLIC_API_URL || "http://127.0.0.1:8001";
+import { getApiBaseUrl } from "./base-url";
 
 export class CheckoutApiError extends Error {
   constructor(public status: number, message: string) {
@@ -9,7 +8,7 @@ export class CheckoutApiError extends Error {
 }
 
 async function request<T>(path: string, init?: RequestInit): Promise<T> {
-  const response = await fetch(`${apiUrl}${path}`, { credentials: "include", ...init });
+  const response = await fetch(`${getApiBaseUrl()}${path}`, { credentials: "include", ...init });
   const data: unknown = await response.json().catch(() => null);
   if (!response.ok) {
     const detail = typeof data === "object" && data !== null && "detail" in data ? data.detail : null;

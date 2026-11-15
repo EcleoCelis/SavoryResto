@@ -150,9 +150,9 @@ export default function ManagerMenuPage() {
   }, [dishModalOpen, actionLoading]);
 
   function handleFileSelect(file: File) {
-    const MAX_SIZE = 5 * 1024 * 1024;
+    const MAX_SIZE = 30 * 1024 * 1024;
     if (file.size > MAX_SIZE) {
-      setDishFormError("The selected image exceeds 5 MB. Please select a smaller photo.");
+      setDishFormError("The selected image exceeds 30 MB. Please select a smaller photo.");
       return;
     }
     const validTypes = ["image/jpeg", "image/png", "image/webp"];
@@ -1071,7 +1071,7 @@ export default function ManagerMenuPage() {
                         <span className={styles.uploadBrowseText}>browse files</span>
                       </p>
                       <p id="dishImageHint" className={styles.uploadHint}>
-                        Accepted formats: JPEG, PNG, WebP (Max 5 MB)
+                        Accepted formats: JPEG, PNG, WebP (Max 30 MB)
                       </p>
                     </div>
                   )}

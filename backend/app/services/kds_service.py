@@ -25,6 +25,8 @@ def serialize_kds_order(order: Order) -> KdsOrderResponse:
         fulfillment_type=order.fulfillment_type,
         fulfillment_destination=destination,
         ordered_at=order.ordered_at,
+        allergy_alert=order.kitchen_allergy_alert,
+        notes=order.notes,
         items=[KdsOrderItemResponse(name=item.product_name or "Menu item", quantity=item.quantity, size=item.size_code, addons=item.selected_addons or []) for item in order.items],
     )
 

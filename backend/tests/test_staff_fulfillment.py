@@ -19,6 +19,7 @@ from app.db.models.staff import Role, StaffUser
 from app.services.fulfillment_service import validate_fulfillment
 from app.services.inventory_service import deduct_inventory_for_confirmed_order, list_inventory_items, record_inventory_transaction
 from app.services.kds_service import list_kds_orders, update_kds_order_status
+from app.services.order_service import cancel_customer_order
 from app.schemas.inventory import InventoryTransactionCreate
 from app.services.checkout_service import quote_checkout_items
 from app.schemas.checkout import CheckoutLineRequest
@@ -164,3 +165,38 @@ class StaffFulfillmentTests(TestCase):
         self.assertEqual(list_inventory_items(self.db, low_stock_only=True), [])
         with self.assertRaisesRegex(ValueError, "negative"):
             record_inventory_transaction(self.db, ingredient.id, InventoryTransactionCreate(transaction_type="waste", quantity_change=Decimal("-4")), self.manager)
+
+    def test_cancelling_confirmed_order_restores_deducted_inventory(self):
+        ingredient = InventoryItem(
+            id=1,
+            name="Chicken",
+            sku="CHICKEN",
+            unit="kg",
+            current_stock=Decimal("1"),
+            reorder_level=Decimal("0.2"),
+            unit_cost=Decimal("100"),
+            is_active=True,
+            created_at=datetime.now(timezone.utc),
+            updated_at=datetime.now(timezone.utc),
+        )
+        recipe = MenuItemIngredient(menu_item_id=1, inventory_item_id=1, quantity_required=Decimal("0.2"))
+        self.db.add_all([ingredient, recipe])
+        self.db.commit()
+
+        update_kds_order_status(self.db, self.kitchen, self.order.id, OrderStatus.CONFIRMED)
+        self.assertEqual(self.db.get(InventoryItem, ingredient.id).current_stock, Decimal("0.8"))
+
+        customer = self.db.get(Customer, self.order.customer_id)
+        cancelled = cancel_customer_order(self.db, customer, self.order.id, "No longer needed")
+        self.assertEqual(cancelled.status, OrderStatus.CANCELLED)
+        self.assertEqual(self.db.get(InventoryItem, ingredient.id).current_stock, Decimal("1.0"))
+
+        return_tx = self.db.scalar(
+            select(InventoryTransaction).where(
+                InventoryTransaction.reference_type == "order_cancellation",
+                InventoryTransaction.reference_id == self.order.id,
+            )
+        )
+        self.assertIsNotNone(return_tx)
+        self.assertEqual(return_tx.transaction_type, "return")
+        self.assertEqual(return_tx.quantity_change, Decimal("0.2"))

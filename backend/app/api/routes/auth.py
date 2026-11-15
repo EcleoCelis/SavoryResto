@@ -120,6 +120,12 @@ def get_me(
         email=current_customer.email,
         phone=current_customer.phone,
         address=current_customer.address,
+        avatar_url=current_customer.avatar_url,
+        is_active=current_customer.is_active,
+        created_at=current_customer.created_at,
+        preferred_payment_code=current_customer.preferred_payment_code,
+        default_order_type=current_customer.default_order_type,
+        theme_preference=current_customer.theme_preference or "system",
     )
 
 

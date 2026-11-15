@@ -1,9 +1,19 @@
 from pathlib import Path
 
-from pydantic import model_validator
+from pydantic import field_validator, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 BASE_DIR = Path(__file__).resolve().parents[2]
+
+
+def normalize_database_url(value: str) -> str:
+    """Normalize Neon/Render postgres:// or postgresql:// URLs to use psycopg v3."""
+    trimmed = value.strip()
+    if trimmed.startswith("postgres://"):
+        return "postgresql+psycopg://" + trimmed[len("postgres://") :]
+    if trimmed.startswith("postgresql://"):
+        return "postgresql+psycopg://" + trimmed[len("postgresql://") :]
+    return trimmed
 
 
 class Settings(BaseSettings):
@@ -11,6 +21,13 @@ class Settings(BaseSettings):
     FRONTEND_URL: str = "http://localhost:3000"
     ENVIRONMENT: str = "development"
     COOKIE_SECURE: bool | None = None
+
+    @field_validator("DATABASE_URL", mode="before")
+    @classmethod
+    def _normalize_database_url(cls, value: str) -> str:
+        if isinstance(value, str):
+            return normalize_database_url(value)
+        return value
 
     JWT_SECRET_KEY: str
     JWT_ALGORITHM: str = "HS256"
@@ -36,7 +53,7 @@ class Settings(BaseSettings):
 
     # Media and Upload Storage
     MEDIA_DIR: Path = BASE_DIR / "media"
-    MAX_UPLOAD_SIZE_BYTES: int = 5 * 1024 * 1024  # 5 MB
+    MAX_UPLOAD_SIZE_BYTES: int = 30 * 1024 * 1024  # 30 MB
     ALLOWED_IMAGE_TYPES: tuple[str, ...] = ("image/jpeg", "image/png", "image/webp")
 
     # Reverse Proxy & Security Hardening
@@ -68,12 +85,15 @@ class Settings(BaseSettings):
 
     @model_validator(mode="after")
     def validate_production_settings(self) -> "Settings":
-        if self.ENVIRONMENT.lower() in ("production", "prod"):
+        if self.ENVIRONMENT.lower() in ("production", "prod", "staging"):
             if len(self.JWT_SECRET_KEY) < 32:
                 raise ValueError(
                     "Production security requirement: JWT_SECRET_KEY must have at least 32 characters."
                 )
-            if "ndkHD0154eXrBigjbbXDDiCncEcowPl" in self.JWT_SECRET_KEY:
+            if (
+                "ndkHD0154eXrBigjbbXDDiCncEcowPl" in self.JWT_SECRET_KEY
+                or "replace-with-a-secure-random" in self.JWT_SECRET_KEY
+            ):
                 raise ValueError(
                     "Production security requirement: JWT_SECRET_KEY must be changed from the development template key."
                 )

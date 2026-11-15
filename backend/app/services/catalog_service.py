@@ -6,6 +6,7 @@ from sqlalchemy import func, or_, select
 from sqlalchemy.orm import Session, joinedload, selectinload
 
 from app.db.models.category import MenuCategory
+from app.db.models.inventory import MenuItemIngredient
 from app.db.models.product import MenuProduct
 from app.db.models.product_option import MenuItemAddon, MenuItemSize
 from app.schemas.category import CategoryCreate, CategoryUpdate
@@ -17,6 +18,7 @@ def _product_options():
     return (
         selectinload(MenuProduct.sizes.and_(MenuItemSize.is_active.is_(True))),
         selectinload(MenuProduct.addons.and_(MenuItemAddon.is_active.is_(True))),
+        selectinload(MenuProduct.ingredients).selectinload(MenuItemIngredient.inventory_item),
     )
 
 

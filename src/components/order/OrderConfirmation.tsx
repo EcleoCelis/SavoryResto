@@ -6,6 +6,7 @@ import { useRouter } from "next/navigation";
 
 import { cancelOrder, getOrder, OrderApiError } from "../../lib/api/orders";
 import { orderStatusLabel } from "../../lib/order-status";
+import { reorderToCart } from "../../lib/reorder";
 import type { Order } from "../../types/order";
 import styles from "../../app/order-confirmation/order-confirmation.module.css";
 import { OrderTracking } from "./OrderTracking";
@@ -27,6 +28,8 @@ export function OrderConfirmation({ orderId }: { orderId: string }) {
   const [showCancellationConfirm, setShowCancellationConfirm] = useState(false);
   const [cancelling, setCancelling] = useState(false);
   const [cancellationError, setCancellationError] = useState("");
+  const [reordering, setReordering] = useState(false);
+  const [reorderError, setReorderError] = useState("");
   const shouldPoll =
     order === null || (order.status !== "completed" && order.status !== "cancelled");
 
@@ -58,6 +61,24 @@ export function OrderConfirmation({ orderId }: { orderId: string }) {
       window.clearInterval(intervalId);
     };
   }, [orderId, router, shouldPoll]);
+
+  async function handleReorder() {
+    if (!order || reordering) return;
+    setReordering(true);
+    setReorderError("");
+    try {
+      const result = await reorderToCart(order.id);
+      if (result.addedCount === 0) {
+        setReorderError(result.summaryMessage);
+      } else {
+        router.push("/cart");
+      }
+    } catch (err) {
+      setReorderError(err instanceof Error ? err.message : "Unable to reorder items.");
+    } finally {
+      setReordering(false);
+    }
+  }
 
   async function handleCancel() {
     if (!order) return;
@@ -146,6 +167,47 @@ export function OrderConfirmation({ orderId }: { orderId: string }) {
         <strong>{currencyFormatter.format(order.total)}</strong>
       </div>
 
+      {(order.delivery_address_snapshot || order.kitchen_allergy_alert || order.notes) && (
+        <div
+          style={{
+            background: "var(--brand-cream-surface, #fcfaf6)",
+            border: "1px solid var(--border-subtle, #e8e3d9)",
+            borderRadius: 12,
+            display: "grid",
+            fontSize: 13,
+            gap: 8,
+            marginTop: 16,
+            padding: "12px 16px",
+          }}
+        >
+          {order.delivery_address_snapshot && (
+            <div>
+              <strong>Saved Address Snapshot:</strong>{" "}
+              {[
+                order.delivery_address_snapshot.label,
+                order.delivery_address_snapshot.street_address,
+                order.delivery_address_snapshot.barangay
+                  ? `Brgy. ${order.delivery_address_snapshot.barangay}`
+                  : "",
+                order.delivery_address_snapshot.city,
+              ]
+                .filter(Boolean)
+                .join(", ")}
+            </div>
+          )}
+          {order.kitchen_allergy_alert && (
+            <div>
+              <strong>Shared Allergy Note:</strong> {order.kitchen_allergy_alert}
+            </div>
+          )}
+          {order.notes && (
+            <div>
+              <strong>Preparation Notes:</strong> {order.notes}
+            </div>
+          )}
+        </div>
+      )}
+
       {order.is_cancellable ? (
         <div className={styles.cancellation}>
           <button
@@ -194,7 +256,28 @@ export function OrderConfirmation({ orderId }: { orderId: string }) {
         </div>
       ) : null}
 
+      {reorderError && (
+        <p className={styles.cancellationError} role="alert" style={{ marginTop: 14 }}>
+          {reorderError}
+        </p>
+      )}
+
       <div className={styles.actions}>
+        <button
+          type="button"
+          onClick={() => void handleReorder()}
+          disabled={reordering}
+          className={styles.menuLink}
+          style={{
+            cursor: reordering ? "wait" : "pointer",
+            background: "var(--brand-gold-bright, #f4be37)",
+            color: "var(--brand-green-deep, #092b1c)",
+            border: 0,
+            fontWeight: 800,
+          }}
+        >
+          {reordering ? "Checking menu..." : "Order Again"}
+        </button>
         <Link href="/orders">View all your orders</Link>
         <Link href="/menu" className={styles.menuLink}>
           Explore menu dishes

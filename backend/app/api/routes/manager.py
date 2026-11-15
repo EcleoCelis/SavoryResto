@@ -12,6 +12,12 @@ from app.core.security import get_client_ip, hash_password, require_permission, 
 from app.db.database import get_db
 from app.db.models.order import Order
 from app.db.models.staff import Role, StaffUser
+from app.schemas.customer import (
+    ManagerCustomerDetailResponse,
+    ManagerCustomerListResponse,
+    ManagerCustomerStatusUpdateRequest,
+    ManagerCustomerSummaryResponse,
+)
 from app.schemas.kds import KdsOrderResponse
 from app.schemas.staff import (
     AuditLogResponse,
@@ -21,6 +27,11 @@ from app.schemas.staff import (
     StaffStatusUpdateRequest,
 )
 from app.services.audit_service import list_audit_logs, record_audit_event
+from app.services.customer_service import (
+    get_manager_customer_detail,
+    list_manager_customers,
+    update_manager_customer_status,
+)
 from app.services.kds_service import list_kds_orders
 from app.services.staff_service import ALLOWED_STAFF_ROLES
 
@@ -33,6 +44,8 @@ perm_roles = require_permission(Permission.ROLES_ASSIGN)
 perm_security = require_permission(Permission.SECURITY_MANAGE)
 perm_analytics = require_permission(Permission.SALES_VIEW)
 perm_audit = require_permission(Permission.AUDIT_VIEW)
+perm_customer_view = require_permission(Permission.CUSTOMER_VIEW)
+perm_customer_manage = require_permission(Permission.CUSTOMER_MANAGE)
 
 
 def _serialize_staff_detail(user: StaffUser) -> StaffDetailResponse:
@@ -358,3 +371,65 @@ def get_sales_analytics(
         "ready_orders": ready_orders,
         "total_revenue": str(total_sales),
     }
+
+
+# ============================================================
+# Customer Directory & Operational Oversight
+# ============================================================
+
+@router.get("/customers", response_model=ManagerCustomerListResponse)
+def get_manager_customers(
+    search: str | None = Query(default=None, max_length=100),
+    status_filter: str = Query(default="all", alias="status", pattern=r"^(all|active|deactivated)$"),
+    page: int = Query(default=1, ge=1),
+    page_size: int = Query(default=20, ge=1, le=50),
+    current_staff: StaffUser = Depends(perm_customer_view),
+    db: Session = Depends(get_db),
+):
+    """List registered customer summaries with real transaction aggregates for managers."""
+    del current_staff
+    return list_manager_customers(
+        db,
+        search=search,
+        status_filter=status_filter,
+        page=page,
+        page_size=page_size,
+    )
+
+
+@router.get("/customers/{customer_id}", response_model=ManagerCustomerDetailResponse)
+def get_manager_customer(
+    customer_id: int,
+    current_staff: StaffUser = Depends(perm_customer_view),
+    db: Session = Depends(get_db),
+):
+    """Retrieve operational customer detail, order history, and consented allergy alerts."""
+    del current_staff
+    detail = get_manager_customer_detail(db, customer_id)
+    if detail is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Customer not found.")
+    return detail
+
+
+@router.patch("/customers/{customer_id}/status", response_model=ManagerCustomerDetailResponse)
+def patch_manager_customer_status(
+    customer_id: int,
+    payload: ManagerCustomerStatusUpdateRequest,
+    req: Request,
+    current_staff: StaffUser = Depends(perm_customer_manage),
+    db: Session = Depends(get_db),
+):
+    """Activate or deactivate a customer account with mandatory reason and audit logging."""
+    try:
+        updated = update_manager_customer_status(
+            db,
+            staff_user=current_staff,
+            customer_id=customer_id,
+            request=payload,
+            ip_address=get_client_ip(req),
+        )
+    except ValueError as err:
+        raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_CONTENT, detail=str(err))
+    if updated is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Customer not found.")
+    return updated

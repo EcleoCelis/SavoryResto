@@ -41,6 +41,10 @@ class CustomerAddress(Base):
         String(255),
         nullable=False,
     )
+    barangay: Mapped[str | None] = mapped_column(
+        String(120),
+        nullable=True,
+    )
     city: Mapped[str] = mapped_column(
         String(100),
         nullable=False,

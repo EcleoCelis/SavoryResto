@@ -540,3 +540,74 @@
     width: 48px;
   }
 }
+
+.addressSelectorList {
+  display: grid;
+  gap: 10px;
+  margin-top: 10px;
+}
+
+.addressChoice {
+  align-items: flex-start;
+  background: var(--brand-cream-surface, #fcfaf6);
+  border: 1px solid var(--border-subtle, #e8e3d9);
+  border-radius: 12px;
+  cursor: pointer;
+  display: flex;
+  gap: 12px;
+  padding: 12px 14px;
+}
+
+.addressChoiceSelected {
+  background: var(--brand-green-tint, #ebf3ef);
+  border-color: var(--brand-green, #173f35);
+}
+
+.addressChoice input {
+  margin-top: 3px;
+  accent-color: var(--brand-green, #173f35);
+}
+
+.addressChoiceTitle {
+  display: block;
+  font-size: 14px;
+  font-weight: 700;
+  color: var(--text-primary, #18251e);
+}
+
+.addressChoiceText {
+  display: block;
+  font-size: 12.5px;
+  color: var(--text-muted, #66756d);
+  margin-top: 2px;
+}
+
+.notesField {
+  background: var(--brand-cream-surface, #fcfaf6);
+  border: 1px solid var(--border-medium, #d5cec2);
+  border-radius: 10px;
+  color: var(--text-primary, #18251e);
+  font: inherit;
+  font-size: 13.5px;
+  margin-top: 8px;
+  padding: 10px 12px;
+  width: 100%;
+}
+
+.allergyCheckBox {
+  align-items: flex-start;
+  background: var(--status-pending-bg, #fff8e6);
+  border: 1px solid var(--status-pending-border, #f8dfaa);
+  border-radius: 12px;
+  cursor: pointer;
+  display: flex;
+  font-size: 13px;
+  gap: 10px;
+  margin-top: 12px;
+  padding: 12px 14px;
+}
+
+.allergyCheckBox input {
+  accent-color: var(--brand-green, #173f35);
+  margin-top: 3px;
+}

@@ -9,8 +9,7 @@ import type {
   ResetPasswordPayload,
   ResetPasswordResponse,
 } from "../../types/auth";
-
-const apiUrl = process.env.NEXT_PUBLIC_API_URL || "http://127.0.0.1:8001";
+import { getApiBaseUrl } from "./base-url";
 
 export class AuthApiError extends Error {
   constructor(public status: number, message: string) {
@@ -19,7 +18,7 @@ export class AuthApiError extends Error {
 }
 
 async function request<T>(path: string, init?: RequestInit): Promise<T> {
-  const response = await fetch(`${apiUrl}${path}`, {
+  const response = await fetch(`${getApiBaseUrl()}${path}`, {
     credentials: "include",
     ...init,
   });
