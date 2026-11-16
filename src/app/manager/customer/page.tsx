@@ -158,12 +158,7 @@ export default function ManagerCustomerPage() {
   return (
     <div className={styles.workspace}>
       <header className={styles.headerRow}>
-        <div>
-          <h1 className={styles.title}>Customer Directory</h1>
-          <p className={styles.subtitle}>
-            Operational customer accounts, verified order totals, consented allergy alerts, and account status management.
-          </p>
-        </div>
+        <h1 className={styles.title}>Customer Directory</h1>
       </header>
 
       {feedback && (
@@ -221,8 +216,8 @@ export default function ManagerCustomerPage() {
                     <tr>
                       <th>Customer</th>
                       <th>Status</th>
-                      <th>Orders</th>
-                      <th>Total Spend</th>
+                      <th className={styles.numericCol}>Orders</th>
+                      <th className={styles.numericCol}>Total Spend</th>
                     </tr>
                   </thead>
                   <tbody>
@@ -231,8 +226,16 @@ export default function ManagerCustomerPage() {
                       return (
                         <tr
                           key={row.customer_id}
+                          tabIndex={0}
+                          aria-selected={isSelected}
                           className={`${styles.customerRow} ${isSelected ? styles.customerRowSelected : ""}`}
                           onClick={() => setSelectedId(row.customer_id)}
+                          onKeyDown={(e) => {
+                            if (e.key === "Enter" || e.key === " ") {
+                              e.preventDefault();
+                              setSelectedId(row.customer_id);
+                            }
+                          }}
                         >
                           <td>
                             <span className={styles.customerName}>{row.full_name}</span>
@@ -246,11 +249,12 @@ export default function ManagerCustomerPage() {
                                 row.is_active ? styles.statusActive : styles.statusInactive
                               }`}
                             >
-                              {row.is_active ? "Active" : "Inactive"}
+                              <span className={styles.statusDot} aria-hidden="true" />
+                              <span>{row.is_active ? "Active" : "Inactive"}</span>
                             </span>
                           </td>
-                          <td>{row.order_count}</td>
-                          <td>{currencyFormatter.format(row.total_spent)}</td>
+                          <td className={styles.numericCol}>{row.order_count}</td>
+                          <td className={styles.numericCol}>{currencyFormatter.format(row.total_spent)}</td>
                         </tr>
                       );
                     })}
@@ -262,7 +266,7 @@ export default function ManagerCustomerPage() {
                 <div className={styles.pagination}>
                   <button
                     type="button"
-                    className={styles.filterTab}
+                    className={styles.pageBtn}
                     disabled={page <= 1}
                     onClick={() => setPage((p) => p - 1)}
                   >
@@ -273,7 +277,7 @@ export default function ManagerCustomerPage() {
                   </span>
                   <button
                     type="button"
-                    className={styles.filterTab}
+                    className={styles.pageBtn}
                     disabled={page * directory.page_size >= directory.total}
                     onClick={() => setPage((p) => p + 1)}
                   >
@@ -327,12 +331,15 @@ export default function ManagerCustomerPage() {
               )}
 
               <div className={styles.infoList}>
-                <div>
-                  <strong>Default Address:</strong> {activeDetail.default_address || "None on file"}
+                <div className={styles.infoRow}>
+                  <span className={styles.infoLabel}>Default Address</span>
+                  <span className={styles.infoValue}>{activeDetail.default_address || "None on file"}</span>
                 </div>
-                <div>
-                  <strong>Marketing Emails:</strong>{" "}
-                  {activeDetail.marketing_opt_in ? "Opted In" : "Not Opted In"}
+                <div className={styles.infoRow}>
+                  <span className={styles.infoLabel}>Marketing Emails</span>
+                  <span className={styles.infoValue}>
+                    {activeDetail.marketing_opt_in ? "Opted In" : "Not Opted In"}
+                  </span>
                 </div>
               </div>
 
@@ -344,7 +351,7 @@ export default function ManagerCustomerPage() {
                   {activeDetail.recent_orders.map((order) => (
                     <div key={order.id} className={styles.orderMiniRow}>
                       <div>
-                        <strong>#{order.order_number}</strong> · {order.status}
+                        <span className={styles.orderMiniNumber}>#{order.order_number}</span> · {order.status}
                         <span className={styles.customerSub}>
                           {formatDate(order.ordered_at)} ·{" "}
                           {order.order_type === "dine_in"
@@ -352,18 +359,22 @@ export default function ManagerCustomerPage() {
                             : "Takeout"}
                         </span>
                       </div>
-                      <strong>{currencyFormatter.format(order.total)}</strong>
+                      <span className={styles.orderMiniTotal}>{currencyFormatter.format(order.total)}</span>
                     </div>
                   ))}
                 </div>
               )}
 
               <div className={styles.statusControls}>
+                <label htmlFor="customer-status-reason" className={styles.reasonLabel}>
+                  Audit reason (optional)
+                </label>
                 <input
+                  id="customer-status-reason"
                   type="text"
                   className={styles.reasonInput}
                   maxLength={500}
-                  placeholder="Optional audit reason (e.g., Guest request, Reactivation verified)"
+                  placeholder="e.g., Guest request, Reactivation verified"
                   value={statusReason}
                   onChange={(e) => setStatusReason(e.target.value)}
                 />

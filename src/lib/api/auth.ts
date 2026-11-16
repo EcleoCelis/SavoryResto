@@ -9,7 +9,9 @@ import type {
   ResetPasswordPayload,
   ResetPasswordResponse,
 } from "../../types/auth";
+import { notifyAuthStateChanged } from "../rbac";
 import { getApiBaseUrl } from "./base-url";
+import { setStaffToken } from "./staff";
 
 export class AuthApiError extends Error {
   constructor(public status: number, message: string) {
@@ -57,8 +59,8 @@ export function registerCustomer(payload: RegisterPayload): Promise<RegisterResp
   });
 }
 
-export function loginCustomer(payload: LoginPayload): Promise<LoginResponse> {
-  return request<LoginResponse>("/api/v1/auth/login", {
+export async function loginCustomer(payload: LoginPayload): Promise<LoginResponse> {
+  const response = await request<LoginResponse>("/api/v1/auth/login", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({
@@ -67,16 +69,24 @@ export function loginCustomer(payload: LoginPayload): Promise<LoginResponse> {
       remember_me: Boolean(payload.remember_me),
     }),
   });
+  // Clear any lingering client-side staff token on customer login
+  setStaffToken(null);
+  notifyAuthStateChanged();
+  return response;
 }
 
 export function getCustomerMe(): Promise<CustomerUser> {
   return request<CustomerUser>("/api/v1/auth/me");
 }
 
-export function logoutCustomer(): Promise<{ message: string }> {
-  return request<{ message: string }>("/api/v1/auth/logout", {
-    method: "POST",
-  });
+export async function logoutCustomer(): Promise<{ message: string }> {
+  try {
+    return await request<{ message: string }>("/api/v1/auth/logout", {
+      method: "POST",
+    });
+  } finally {
+    notifyAuthStateChanged();
+  }
 }
 
 export function requestPasswordReset(

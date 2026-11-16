@@ -3,7 +3,7 @@
 import json
 import logging
 from typing import Any
-from sqlalchemy import select
+from sqlalchemy import or_, select
 from sqlalchemy.orm import Session
 
 from app.db.models.audit_log import AuditLog
@@ -82,9 +82,28 @@ def list_audit_logs(
     limit: int = 50,
     offset: int = 0,
     event_type: str | None = None,
+    outcome: str | None = None,
+    search: str | None = None,
 ) -> list[AuditLog]:
     """Retrieve audit logs in descending chronological order."""
-    query = select(AuditLog).order_by(AuditLog.created_at.desc()).offset(offset).limit(limit)
-    if event_type:
-        query = query.where(AuditLog.event_type == event_type)
+    query = select(AuditLog)
+    if event_type and event_type.strip():
+        query = query.where(AuditLog.event_type == event_type.strip())
+    if outcome and outcome.strip():
+        query = query.where(AuditLog.outcome == outcome.strip())
+    if search and search.strip():
+        pattern = f"%{search.strip()}%"
+        query = query.where(
+            or_(
+                AuditLog.event_type.ilike(pattern),
+                AuditLog.actor_email.ilike(pattern),
+                AuditLog.target_type.ilike(pattern),
+                AuditLog.target_id.ilike(pattern),
+            )
+        )
+    query = (
+        query.order_by(AuditLog.created_at.desc(), AuditLog.id.desc())
+        .offset(offset)
+        .limit(limit)
+    )
     return list(db.scalars(query).all())

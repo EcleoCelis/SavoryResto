@@ -100,7 +100,8 @@ if (
 }
 
 const nextConfig: NextConfig = {
-  output: "standalone",
+  distDir: isProduction ? ".next" : ".next-dev",
+  ...(isProduction ? { output: "standalone" as const } : {}),
   // Permit local testing through the loopback IP as well as localhost.
   allowedDevOrigins: ["127.0.0.1"],
   reactCompiler: true,

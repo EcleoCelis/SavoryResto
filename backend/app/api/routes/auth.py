@@ -188,6 +188,15 @@ def login(
         max_age=max_age,
         path="/",
     )
+    # Prevent session confusion between customer and staff sessions
+    if request.cookies.get("staff_access_token"):
+        response.delete_cookie(
+            key="staff_access_token",
+            path="/",
+            httponly=True,
+            secure=settings.cookie_secure,
+            samesite="lax",
+        )
 
     return LoginResponse(
         message="Signed in successfully.",

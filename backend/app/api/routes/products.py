@@ -1,7 +1,8 @@
 from fastapi import APIRouter, Depends, File, HTTPException, Query, UploadFile, status
 from sqlalchemy.orm import Session
 
-from app.core.security import require_staff_roles
+from app.core.permissions import Permission
+from app.core.security import require_permission
 from app.db.database import get_db
 from app.schemas.product import (
     DishImageUploadResponse,
@@ -40,7 +41,7 @@ def get_products(
 @router.get(
     "/manage",
     response_model=list[ProductResponse],
-    dependencies=[Depends(require_staff_roles("manager"))],
+    dependencies=[Depends(require_permission(Permission.MENU_MANAGE))],
 )
 def get_products_for_manager(
     category_id: int | None = Query(default=None, gt=0),
@@ -55,7 +56,7 @@ def get_products_for_manager(
     "/upload-image",
     response_model=DishImageUploadResponse,
     status_code=status.HTTP_201_CREATED,
-    dependencies=[Depends(require_staff_roles("manager"))],
+    dependencies=[Depends(require_permission(Permission.MENU_MANAGE))],
 )
 async def upload_dish_image_endpoint(
     file: UploadFile = File(...),
@@ -79,7 +80,7 @@ async def upload_dish_image_endpoint(
 
 @router.delete(
     "/upload-image",
-    dependencies=[Depends(require_staff_roles("manager"))],
+    dependencies=[Depends(require_permission(Permission.MENU_MANAGE))],
 )
 def delete_uploaded_dish_image_endpoint(
     image_url: str = Query(..., description="The public URL or storage key of the image to remove"),
@@ -95,7 +96,7 @@ def delete_uploaded_dish_image_endpoint(
     "",
     response_model=ProductResponse,
     status_code=status.HTTP_201_CREATED,
-    dependencies=[Depends(require_staff_roles("manager"))],
+    dependencies=[Depends(require_permission(Permission.MENU_MANAGE))],
 )
 def create_product_endpoint(
     product_in: ProductCreate,
@@ -110,7 +111,7 @@ def create_product_endpoint(
 @router.put(
     "/{product_id}",
     response_model=ProductResponse,
-    dependencies=[Depends(require_staff_roles("manager"))],
+    dependencies=[Depends(require_permission(Permission.MENU_MANAGE))],
 )
 def update_product_endpoint(
     product_id: int,
@@ -129,7 +130,7 @@ def update_product_endpoint(
 @router.patch(
     "/{product_id}/availability",
     response_model=ProductResponse,
-    dependencies=[Depends(require_staff_roles("manager"))],
+    dependencies=[Depends(require_permission(Permission.MENU_MANAGE))],
 )
 def update_product_availability_endpoint(
     product_id: int,
@@ -144,7 +145,7 @@ def update_product_availability_endpoint(
 
 @router.delete(
     "/{product_id}",
-    dependencies=[Depends(require_staff_roles("manager"))],
+    dependencies=[Depends(require_permission(Permission.MENU_MANAGE))],
 )
 def delete_product_endpoint(
     product_id: int,

@@ -1,7 +1,8 @@
 from fastapi import APIRouter, Depends, HTTPException, Query, status
 from sqlalchemy.orm import Session
 
-from app.core.security import require_staff_roles
+from app.core.permissions import Permission
+from app.core.security import require_permission
 from app.db.database import get_db
 from app.db.models.staff import StaffUser
 from app.schemas.inventory import InventoryItemResponse, InventoryTransactionCreate, InventoryTransactionResponse
@@ -9,7 +10,7 @@ from app.services.inventory_service import list_inventory_items, list_inventory_
 
 
 router = APIRouter(prefix="/api/v1/inventory", tags=["Inventory"])
-manager_access = require_staff_roles("manager")
+manager_access = require_permission(Permission.INVENTORY_MANAGE)
 
 
 @router.get("", response_model=list[InventoryItemResponse])

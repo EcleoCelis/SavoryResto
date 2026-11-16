@@ -235,6 +235,23 @@ class ManagerStaffAdminApiTests(TestCase):
         self.assertIn("outcome", first_log)
         self.assertNotIn("password", str(first_log).lower())
 
+        # Optional staff filters & audit log outcome/search filters
+        f_status, filtered_staff, _ = self._request(
+            f"/api/v1/manager/staff?role=kitchen_staff&status=active&search={self.kitchen_email}",
+            headers={"Cookie": self.mgr_cookie},
+        )
+        self.assertEqual(f_status, 200)
+        self.assertTrue(any(u["email"] == self.kitchen_email for u in filtered_staff))
+        self.assertTrue(all(u["role"] == "kitchen_staff" and u["status"] == "active" for u in filtered_staff))
+
+        a_status, filtered_logs, _ = self._request(
+            f"/api/v1/manager/audit-logs?outcome=success&search={self.manager_email}",
+            headers={"Cookie": self.mgr_cookie},
+        )
+        self.assertEqual(a_status, 200)
+        self.assertIsInstance(filtered_logs, list)
+        self.assertTrue(all(entry["outcome"] == "success" for entry in filtered_logs))
+
     def test_06_security_overview_and_analytics_endpoints(self):
         """Security overview and analytics summary return operational status to Managers."""
         # Security overview

@@ -15,6 +15,7 @@ import {
   registerCustomer,
   AuthApiError,
 } from "../../lib/api/auth";
+import { AUTH_STATE_CHANGED_EVENT } from "../../lib/rbac";
 import type {
   CustomerUser,
   LoginPayload,
@@ -74,10 +75,16 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
     void initAuth();
 
+    function handleAuthChanged() {
+      void refreshUser();
+    }
+    window.addEventListener(AUTH_STATE_CHANGED_EVENT, handleAuthChanged);
+
     return () => {
       mounted = false;
+      window.removeEventListener(AUTH_STATE_CHANGED_EVENT, handleAuthChanged);
     };
-  }, []);
+  }, [refreshUser]);
 
   const login = useCallback(
     async (payload: LoginPayload): Promise<LoginResponse> => {

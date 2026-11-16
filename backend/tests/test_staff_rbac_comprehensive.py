@@ -234,7 +234,7 @@ class ComprehensiveStaffRbacTests(TestCase):
             order_id = order.id
 
         try:
-            # Kitchen attempts to mark "completed" -> 403 Forbidden
+            # Kitchen attempts to mark "completed" via KDS endpoint -> 403 Forbidden
             kit_comp_status, kit_comp_resp, _ = self._request(
                 f"/api/v1/kds/orders/{order_id}/status",
                 method="PATCH",
@@ -244,9 +244,37 @@ class ComprehensiveStaffRbacTests(TestCase):
             self.assertEqual(kit_comp_status, 403)
             self.assertIn("only update kitchen preparation statuses", kit_comp_resp["detail"].lower())
 
-            # Manager marks "completed" -> 200 OK
-            mgr_comp_status, mgr_comp_resp, _ = self._request(
+            # Kitchen attempts to complete via Manager endpoint -> 403 Forbidden
+            kit_mgr_comp_status, _, _ = self._request(
+                f"/api/v1/manager/orders/{order_id}/status",
+                method="PATCH",
+                body={"status": "completed"},
+                headers={"Cookie": kit_cookie},
+            )
+            self.assertEqual(kit_mgr_comp_status, 403)
+
+            # Manager attempts to access KDS endpoints -> 403 Forbidden (strict portal isolation)
+            self.assertEqual(self._request("/api/v1/kds/orders", headers={"Cookie": mgr_cookie})[0], 403)
+            mgr_kds_status, _, _ = self._request(
                 f"/api/v1/kds/orders/{order_id}/status",
+                method="PATCH",
+                body={"status": "completed"},
+                headers={"Cookie": mgr_cookie},
+            )
+            self.assertEqual(mgr_kds_status, 403)
+
+            # Manager cannot invoke kitchen-only preparation statuses via manager endpoint -> 403 Forbidden
+            mgr_prep_status, _, _ = self._request(
+                f"/api/v1/manager/orders/{order_id}/status",
+                method="PATCH",
+                body={"status": "preparing"},
+                headers={"Cookie": mgr_cookie},
+            )
+            self.assertEqual(mgr_prep_status, 403)
+
+            # Manager marks "completed" via Manager endpoint -> 200 OK
+            mgr_comp_status, mgr_comp_resp, _ = self._request(
+                f"/api/v1/manager/orders/{order_id}/status",
                 method="PATCH",
                 body={"status": "completed"},
                 headers={"Cookie": mgr_cookie},
@@ -280,6 +308,28 @@ class ComprehensiveStaffRbacTests(TestCase):
         status, resp, _, _ = self._login(self.manager_email, requested_role="kitchen_staff")
         self.assertEqual(status, 403)
         self.assertIn("not authorized for the kitchen display system", resp["detail"].lower())
+
+        # 5. Tampered JWT role claim (valid signature, wrong role claim) -> 401 Unauthorized
+        tampered_kit_jwt = jwt.encode(
+            {"sub": str(self.kitchen_id), "type": "staff", "role": "manager", "exp": datetime.now(timezone.utc) + timedelta(minutes=5)},
+            settings.JWT_SECRET_KEY,
+            algorithm=settings.JWT_ALGORITHM,
+        )
+        self.assertEqual(self._request("/api/v1/manager/orders", headers={"Cookie": f"staff_access_token={tampered_kit_jwt}"})[0], 401)
+        self.assertEqual(self._request("/api/v1/kds/orders", headers={"Cookie": f"staff_access_token={tampered_kit_jwt}"})[0], 401)
+
+        # 6. Staff token passed to customer endpoints -> 401 Unauthorized
+        _, _, mgr_cookie, _ = self._login(self.manager_email)
+        _, _, kit_cookie, _ = self._login(self.kitchen_email)
+        self.assertEqual(self._request("/api/v1/customers/me", headers={"Cookie": mgr_cookie})[0], 401)
+        self.assertEqual(self._request("/api/v1/orders", headers={"Cookie": kit_cookie})[0], 401)
+        self.assertEqual(self._request("/api/v1/checkout/quote", method="POST", body={"items": []}, headers={"Cookie": mgr_cookie})[0], 401)
+
+        # 7. Customer token passed to manager menu/inventory/customer admin endpoints -> 401 Unauthorized
+        self.assertEqual(self._request("/api/v1/products/manage", headers=cust_headers)[0], 401)
+        self.assertEqual(self._request("/api/v1/categories/manage", headers=cust_headers)[0], 401)
+        self.assertEqual(self._request("/api/v1/manager/customers", headers=cust_headers)[0], 401)
+        self.assertEqual(self._request("/api/v1/manager/staff", headers=cust_headers)[0], 401)
 
     def test_08_session_invalidation_and_logout(self):
         """Logout invalidates cookie and subsequent requests are rejected."""
@@ -329,3 +379,37 @@ class ComprehensiveStaffRbacTests(TestCase):
         self.assertEqual(st_wrong_user, 401)
         self.assertEqual(resp_wrong_pass["detail"], "Invalid staff email or password.")
         self.assertEqual(resp_wrong_user["detail"], "Invalid staff email or password.")
+
+    def test_11_staff_login_clears_customer_cookie_and_deactivation_invalidates_session(self):
+        """Staff login clears customer cookie and deactivated staff sessions are immediately rejected."""
+        login_status, _, login_headers = self._request(
+            "/api/v1/staff/auth/login",
+            method="POST",
+            body={"email": self.manager_email, "password": self.password, "requested_role": "manager"},
+            headers={"Cookie": f"access_token={self.customer_token}"},
+        )
+        self.assertEqual(login_status, 200)
+        set_cookies = " ".join(login_headers.get_all("Set-Cookie") or [])
+        self.assertIn("access_token=", set_cookies)
+        _, _, mgr_cookie, _ = self._login(self.manager_email, requested_role="manager")
+
+        # Temporarily deactivate kitchen user -> existing JWT must immediately return 401
+        _, _, kit_cookie, _ = self._login(self.kitchen_email, requested_role="kitchen_staff")
+        self.assertEqual(self._request("/api/v1/kds/orders", headers={"Cookie": kit_cookie})[0], 200)
+
+        deact_status, _, _ = self._request(
+            f"/api/v1/manager/staff/{self.kitchen_id}/status",
+            method="PATCH",
+            body={"status": "inactive"},
+            headers={"Cookie": mgr_cookie},
+        )
+        self.assertEqual(deact_status, 200)
+        try:
+            self.assertEqual(self._request("/api/v1/kds/orders", headers={"Cookie": kit_cookie})[0], 401)
+        finally:
+            self._request(
+                f"/api/v1/manager/staff/{self.kitchen_id}/status",
+                method="PATCH",
+                body={"status": "active"},
+                headers={"Cookie": mgr_cookie},
+            )

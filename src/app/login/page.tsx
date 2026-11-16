@@ -5,6 +5,7 @@ import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
 import { useAuth } from "../../components/auth/AuthProvider";
 import { AuthApiError } from "../../lib/api/auth";
+import { isSafeCustomerNextPath } from "../../lib/rbac";
 import { CheckIcon, EyeIcon, EyeOffIcon } from "../../components/ui/Icons";
 import styles from "./login.module.css";
 
@@ -29,7 +30,7 @@ function LoginContent() {
   const [errors, setErrors] = useState<LoginErrors>({});
   const [successMessage, setSuccessMessage] = useState("");
 
-  const nextPath = searchParams.get("next") || "/customer";
+  const nextPath = isSafeCustomerNextPath(searchParams.get("next"));
 
   useEffect(() => {
     if (!authLoading && isAuthenticated) {

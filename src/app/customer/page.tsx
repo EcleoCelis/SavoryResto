@@ -5,6 +5,7 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useCallback, useEffect, useRef, useState, type ChangeEvent, type FormEvent } from "react";
 
+import { CustomerRouteGuard } from "../../components/auth/CustomerRouteGuard";
 import { useAuth } from "../../components/auth/AuthProvider";
 import { Footer } from "../../components/layout/Footer";
 import { Header } from "../../components/layout/Header";
@@ -130,7 +131,7 @@ function getReadableError(err: unknown, fallback: string): string {
   return fallback;
 }
 
-export default function CustomerAccountPage() {
+function CustomerAccountContent() {
   const router = useRouter();
   const { user, isAuthenticated, isLoading: authLoading, refreshUser, logout } = useAuth();
   const { setThemePreference } = useTheme();
@@ -1925,5 +1926,13 @@ export default function CustomerAccountPage() {
 
       <Footer />
     </div>
+  );
+}
+
+export default function CustomerAccountPage() {
+  return (
+    <CustomerRouteGuard>
+      <CustomerAccountContent />
+    </CustomerRouteGuard>
   );
 }

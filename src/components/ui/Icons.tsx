@@ -41,6 +41,15 @@ export function CartIcon({ size = 20, ...props }: IconProps) {
   );
 }
 
+export function PlateIcon({ size = 18, ...props }: IconProps) {
+  return (
+    <svg {...baseProps(size, props)}>
+      <circle cx="12" cy="12" r="9.5" />
+      <circle cx="12" cy="12" r="5.5" strokeWidth={1.4} />
+    </svg>
+  );
+}
+
 export function UserIcon({ size = 20, ...props }: IconProps) {
   return (
     <svg {...baseProps(size, props)}>

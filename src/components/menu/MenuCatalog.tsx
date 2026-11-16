@@ -347,7 +347,7 @@ export function MenuCatalog() {
                     <Image
                       src={product.image_url}
                       alt={product.name}
-                      sizes="(max-width: 680px) 84px, 104px"
+                      sizes="(max-width: 360px) 76px, (max-width: 640px) 84px, (max-width: 1080px) 96px, 116px"
                       fill
                       onError={() => {
                         setFailedImageIds((prev) => new Set(prev).add(product.id));

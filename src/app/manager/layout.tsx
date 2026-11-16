@@ -2,54 +2,82 @@
 
 import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
+import { AccessDenied } from "../../components/auth/AccessDenied";
 import { ManagerSidebar } from "../../components/manager/ManagerSidebar";
 import { MenuToggleIcon } from "../../components/ui/Icons";
-import { getCurrentStaff, StaffApiError } from "../../lib/api/staff";
+import { getCustomerMe } from "../../lib/api/auth";
+import { getCurrentStaff } from "../../lib/api/staff";
+import type { AppRole } from "../../lib/rbac";
 import type { StaffUser } from "../../types/staff";
 import styles from "./layout.module.css";
+
+type ManagerAuthState = "checking" | "authorized" | "denied" | "unauthenticated";
 
 export default function ManagerLayout({ children }: LayoutProps<"/manager">) {
   const router = useRouter();
   const [staff, setStaff] = useState<StaffUser | null>(null);
-  const [loading, setLoading] = useState(true);
+  const [authState, setAuthState] = useState<ManagerAuthState>("checking");
+  const [deniedRole, setDeniedRole] = useState<AppRole | null>(null);
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
 
   useEffect(() => {
     let active = true;
 
-    async function checkStaffAuth() {
+    async function verifyManagerAccess() {
       try {
         const staffUser = await getCurrentStaff();
         if (!active) return;
 
         if (staffUser.role !== "manager") {
-          // If staff is kitchen_staff or other, redirect to KDS workspace
-          router.replace("/kds");
+          setStaff(null);
+          setDeniedRole(staffUser.role);
+          setAuthState("denied");
           return;
         }
 
+        setDeniedRole(null);
         setStaff(staffUser);
-      } catch (err) {
+        setAuthState("authorized");
+      } catch {
         if (!active) return;
-        if (err instanceof StaffApiError && (err.status === 401 || err.status === 403)) {
-          router.replace("/staff/login");
+        setStaff(null);
+
+        // Distinguish authenticated Customer (403 Access Denied) from Unauthenticated (redirect to /staff/login)
+        const customer = await getCustomerMe().catch(() => null);
+        if (!active) return;
+
+        if (customer) {
+          setDeniedRole("customer");
+          setAuthState("denied");
           return;
         }
-        // Fallback redirect to login
+
+        setAuthState("unauthenticated");
         router.replace("/staff/login");
-      } finally {
-        if (active) setLoading(false);
       }
     }
 
-    void checkStaffAuth();
+    void verifyManagerAccess();
 
+    function handlePageShow(event: PageTransitionEvent) {
+      if (event.persisted && active) {
+        setAuthState("checking");
+        void verifyManagerAccess();
+      }
+    }
+
+    window.addEventListener("pageshow", handlePageShow);
     return () => {
       active = false;
+      window.removeEventListener("pageshow", handlePageShow);
     };
   }, [router]);
 
-  if (loading) {
+  if (authState === "denied") {
+    return <AccessDenied portal="manager" actualRole={deniedRole} />;
+  }
+
+  if (authState !== "authorized" || !staff) {
     return (
       <div className={styles.loadingContainer} aria-live="polite">
         <div className={styles.spinner} aria-hidden="true" />
@@ -82,7 +110,7 @@ export default function ManagerLayout({ children }: LayoutProps<"/manager">) {
             </button>
             <span className={styles.mobileBrandName}>SavoryBites</span>
           </div>
-          {staff && <span className={styles.mobileStaffBadge}>{staff.name}</span>}
+          <span className={styles.mobileStaffBadge}>{staff.name}</span>
         </header>
 
         {/* Main Content Area */}

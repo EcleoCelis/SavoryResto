@@ -146,7 +146,7 @@ def login(request: StaffLoginRequest, response: Response, req: Request, db: Sess
     )
 
     expires = timedelta(days=7) if request.remember_me else timedelta(minutes=settings.STAFF_ACCESS_TOKEN_EXPIRE_MINUTES)
-    token_str = create_staff_access_token(staff_user.id, expires)
+    token_str = create_staff_access_token(staff_user.id, expires, role=staff_user.role.name)
     response.set_cookie(
         "staff_access_token",
         token_str,
@@ -156,6 +156,15 @@ def login(request: StaffLoginRequest, response: Response, req: Request, db: Sess
         max_age=int(expires.total_seconds()),
         path="/",
     )
+    # Prevent session confusion between staff and customer sessions
+    if req.cookies.get("access_token"):
+        response.delete_cookie(
+            "access_token",
+            httponly=True,
+            secure=settings.cookie_secure,
+            samesite="lax",
+            path="/",
+        )
     return StaffLoginResponse(
         message="Staff sign-in successful.",
         target_url=target_url,

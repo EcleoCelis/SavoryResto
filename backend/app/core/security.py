@@ -60,6 +60,7 @@ def create_access_token(
         "iat": now,
         "exp": expire,
         "type": "access",
+        "role": "customer",
     }
 
     return jwt.encode(
@@ -69,10 +70,22 @@ def create_access_token(
     )
 
 
-def create_staff_access_token(staff_id: int, expires_delta: timedelta) -> str:
+def create_staff_access_token(
+    staff_id: int,
+    expires_delta: timedelta,
+    role: str | None = None,
+) -> str:
     now = datetime.now(timezone.utc)
+    payload: dict = {
+        "sub": str(staff_id),
+        "iat": now,
+        "exp": now + expires_delta,
+        "type": "staff",
+    }
+    if role is not None:
+        payload["role"] = role
     return jwt.encode(
-        {"sub": str(staff_id), "iat": now, "exp": now + expires_delta, "type": "staff"},
+        payload,
         settings.JWT_SECRET_KEY,
         algorithm=settings.JWT_ALGORITHM,
     )
@@ -121,8 +134,11 @@ def get_current_customer(
 
         customer_id = payload.get("sub")
         token_type = payload.get("type")
+        token_role = payload.get("role")
 
         if customer_id is None or token_type != "access":
+            raise credentials_exception
+        if token_role is not None and token_role != "customer":
             raise credentials_exception
 
         customer_id = int(customer_id)
@@ -167,8 +183,11 @@ def get_optional_current_customer(
         payload = decode_access_token(token)
         customer_id = payload.get("sub")
         token_type = payload.get("type")
+        token_role = payload.get("role")
 
         if customer_id is None or token_type != "access":
+            return None
+        if token_role is not None and token_role != "customer":
             return None
 
         customer_id = int(customer_id)
@@ -220,6 +239,7 @@ def get_current_staff(
             logger.warning("Staff auth failed: invalid token type %s", payload.get("type"))
             raise credentials_exception
         staff_id = int(payload["sub"])
+        token_role = payload.get("role")
     except (JWTError, ValueError, TypeError, KeyError) as e:
         logger.warning("Staff auth failed decoding token: %s", e)
         raise credentials_exception
@@ -233,6 +253,14 @@ def get_current_staff(
         raise credentials_exception
     if staff_user.password_hash is None:
         logger.warning("Staff auth failed: staff user %s has no password hash", staff_id)
+        raise credentials_exception
+    if token_role is not None and token_role != staff_user.role.name:
+        logger.warning(
+            "Staff auth failed: token role claim '%s' does not match assigned role '%s' for staff user %s",
+            token_role,
+            staff_user.role.name,
+            staff_id,
+        )
         raise credentials_exception
     return staff_user
 
@@ -250,11 +278,14 @@ def get_optional_current_staff(
         if payload.get("type") != "staff":
             return None
         staff_id = int(payload["sub"])
+        token_role = payload.get("role")
     except (JWTError, ValueError, TypeError, KeyError):
         return None
 
     staff_user = db.query(StaffUser).options(joinedload(StaffUser.role)).filter(StaffUser.id == staff_id).first()
     if staff_user is None or staff_user.status != "active" or staff_user.password_hash is None:
+        return None
+    if token_role is not None and token_role != staff_user.role.name:
         return None
     return staff_user
 

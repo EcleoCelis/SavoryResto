@@ -122,47 +122,64 @@
   opacity: 1 !important;
 }
 
-.cartLink {
+.plateLink {
   align-items: center;
-  background: rgba(255, 255, 255, 0.08);
-  border: 1px solid rgba(255, 255, 255, 0.16);
-  border-radius: var(--radius-full, 999px);
-  color: white !important;
+  background: transparent;
+  border: none;
+  border-radius: 4px;
+  box-shadow: none;
+  color: inherit;
   display: inline-flex;
   flex-shrink: 0;
-  gap: 8px;
-  padding: 8px 14px;
   font-size: 13px;
   font-weight: 600;
+  gap: 6px;
+  min-height: 36px;
+  padding: 6px 2px;
+  position: relative;
   white-space: nowrap;
-  transition: background var(--motion-micro) var(--ease-standard),
-              border-color var(--motion-micro) var(--ease-standard),
-              transform var(--motion-instant) var(--ease-standard);
+  transition: color var(--motion-micro) var(--ease-standard);
 }
 
-.cartLink:hover {
-  background: rgba(255, 255, 255, 0.16);
-  border-color: var(--brand-gold, #c49a4a);
-  transform: translateY(-1px);
+.plateLink::after {
+  content: "";
+  position: absolute;
+  bottom: 2px;
+  left: 50%;
+  right: 50%;
+  height: 2px;
+  background: var(--brand-gold-bright, #f4be37);
+  border-radius: 2px;
+  opacity: 0;
+  transition: left var(--motion-standard) var(--ease-standard),
+              right var(--motion-standard) var(--ease-standard),
+              opacity var(--motion-standard) var(--ease-standard);
 }
 
-.cartLink:active {
-  transform: scale(0.96);
+.plateLink:hover {
+  color: var(--brand-gold-bright, #f4be37);
 }
 
-.activeCartLink {
-  border-color: var(--brand-gold-bright, #f4be37);
-  background: rgba(244, 190, 55, 0.14);
+.plateLink:focus-visible {
+  outline: 2px solid var(--brand-gold-bright, #f4be37);
+  outline-offset: 4px;
 }
 
-.cartIcon {
-  width: 15px;
-  height: 15px;
-  transition: transform var(--motion-micro) var(--ease-standard);
+.activePlateLink {
+  color: var(--brand-gold-bright, #f4be37) !important;
+  font-weight: 700 !important;
 }
 
-.cartLink:hover .cartIcon {
-  transform: translateY(-1px);
+.activePlateLink::after {
+  left: 0;
+  right: 0;
+  opacity: 1;
+}
+
+.plateIcon {
+  flex-shrink: 0;
+  height: 18px;
+  width: 18px;
 }
 
 .cartBadge {
@@ -1267,10 +1284,14 @@
   .actions {
     gap: 8px;
   }
-  .cartLink {
-    padding: 6px 10px;
+  .plateLink {
+    padding: 4px 2px;
     font-size: 12px;
     gap: 5px;
+  }
+  .plateIcon {
+    height: 18px;
+    width: 18px;
   }
   .order {
     padding: 7px 14px;
@@ -1292,9 +1313,9 @@
   .order {
     display: none;
   }
-  .cartLink {
-    padding: 5px 8px;
-    font-size: 11px;
+  .plateLink {
+    padding: 4px 2px;
+    font-size: 12px;
   }
   .heroHeading {
     font-size: 42px;

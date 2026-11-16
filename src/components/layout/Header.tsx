@@ -6,7 +6,7 @@ import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { useAuth } from "../auth/AuthProvider";
 import { useCart } from "../cart/CartProvider";
-import { CartIcon, CloseIcon } from "../ui/Icons";
+import { CloseIcon, PlateIcon } from "../ui/Icons";
 import { StaggeredMenuButton } from "./StaggeredMenuButton";
 import styles from "../../app/home.module.css";
 
@@ -127,15 +127,16 @@ export function Header() {
         <div className={styles.actions}>
           <Link
             href="/cart"
-            className={`${styles.cartLink} ${isCart ? styles.activeCartLink : ""}`}
-            aria-label={`Shopping Cart, ${itemCount} items`}
+            className={`${styles.plateLink} ${isCart ? styles.activePlateLink : ""}`}
+            aria-current={isCart ? "page" : undefined}
+            aria-label={itemCount > 0 ? `Plate, ${itemCount} ${itemCount === 1 ? "item" : "items"}` : "Plate"}
           >
-            <CartIcon className={styles.cartIcon} size={20} />
-            <span>Cart</span>
+            <PlateIcon className={styles.plateIcon} size={18} />
+            <span>My plate</span>
             {itemCount > 0 ? (
               <span
                 className={`${styles.cartBadge} ${cartBump ? styles.cartBadgeBump : ""}`}
-                aria-label={`${itemCount} items in cart`}
+                aria-hidden="true"
               >
                 {itemCount}
               </span>
@@ -295,8 +296,9 @@ export function Header() {
             href="/cart"
             onClick={closeMenu}
             className={isCart ? styles.mobileActiveLink : undefined}
+            aria-current={isCart ? "page" : undefined}
           >
-            Cart {itemCount > 0 ? `(${itemCount} items)` : ""}
+            Plate {itemCount > 0 ? `(${itemCount} ${itemCount === 1 ? "item" : "items"})` : ""}
           </Link>
           {isLoading ? null : isAuthenticated && user ? (
             <Link

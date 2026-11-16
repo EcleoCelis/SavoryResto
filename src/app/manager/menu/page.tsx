@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useId, useRef, useState } from "react";
+import { useCallback, useEffect, useId, useRef, useState } from "react";
 import {
   createCategory,
   createProduct,
@@ -38,6 +38,12 @@ const sortLabels: Record<SortOption, string> = {
   "price-asc": "Price: Low to High",
   "price-desc": "Price: High to Low",
 };
+
+const currencyFormatter = new Intl.NumberFormat("en-PH", {
+  style: "currency",
+  currency: "PHP",
+  minimumFractionDigits: 2,
+});
 
 export default function ManagerMenuPage() {
   const searchInputId = useId();
@@ -115,6 +121,20 @@ export default function ManagerMenuPage() {
     };
   }, [imagePreviewUrl]);
 
+  const closeDishModal = useCallback(() => {
+    if (imagePreviewUrl && imagePreviewUrl.startsWith("blob:")) {
+      URL.revokeObjectURL(imagePreviewUrl);
+    }
+    setSelectedImageFile(null);
+    setImagePreviewUrl(null);
+    setDishImageUrl("");
+    setDishFormError("");
+    setDishModalOpen(false);
+    if (dishModalOpenerRef.current) {
+      dishModalOpenerRef.current.focus();
+    }
+  }, [imagePreviewUrl]);
+
   // Trap focus and handle Escape for dish modal
   useEffect(() => {
     if (!dishModalOpen) return;
@@ -147,7 +167,7 @@ export default function ManagerMenuPage() {
     return () => {
       document.removeEventListener("keydown", handleKeyDown);
     };
-  }, [dishModalOpen, actionLoading]);
+  }, [dishModalOpen, actionLoading, closeDishModal]);
 
   function handleFileSelect(file: File) {
     const MAX_SIZE = 30 * 1024 * 1024;
@@ -178,20 +198,6 @@ export default function ManagerMenuPage() {
     setDishImageUrl("");
     if (fileInputRef.current) {
       fileInputRef.current.value = "";
-    }
-  }
-
-  function closeDishModal() {
-    if (imagePreviewUrl && imagePreviewUrl.startsWith("blob:")) {
-      URL.revokeObjectURL(imagePreviewUrl);
-    }
-    setSelectedImageFile(null);
-    setImagePreviewUrl(null);
-    setDishImageUrl("");
-    setDishFormError("");
-    setDishModalOpen(false);
-    if (dishModalOpenerRef.current) {
-      dishModalOpenerRef.current.focus();
     }
   }
 
@@ -548,15 +554,10 @@ export default function ManagerMenuPage() {
     <div className={styles.menuPage}>
       {/* Page Header */}
       <header className={styles.pageHeader}>
-        <div className={styles.headerLeft}>
-          <h1 className={styles.pageTitle}>Menu Management</h1>
-          <p className={styles.pageSubtitle}>
-            Manage dish categories, pricing, item details, and availability across your restaurant catalog.
-          </p>
-        </div>
+        <h1 className={styles.pageTitle}>Menu Management</h1>
 
         <div className={styles.headerActions}>
-          {/* View Mode Tabs (Reference Image 1 & 3) */}
+          {/* View Mode Tabs */}
           <div className={styles.viewTabs} role="tablist" aria-label="Menu view mode">
             <button
               type="button"
@@ -585,7 +586,18 @@ export default function ManagerMenuPage() {
             disabled={loading}
             aria-label="Refresh restaurant catalog"
           >
-            <RefreshIcon size={16} /> Refresh
+            <RefreshIcon size={15} />
+            <span>Refresh</span>
+          </button>
+
+          <button
+            type="button"
+            className={styles.primaryBtn}
+            onClick={(e) => openAddDishModal(e.currentTarget)}
+            aria-label="Add a new dish to the menu"
+          >
+            <PlusIcon size={15} />
+            <span>Add Dish</span>
           </button>
         </div>
       </header>
@@ -620,87 +632,92 @@ export default function ManagerMenuPage() {
         </article>
       </section>
 
-      {/* Main Content: Editing Mode (Three Columns) vs Preview Grid */}
+      {/* Main Content: Editing Mode (Two Columns) vs Preview Grid */}
       {viewMode === "editing" ? (
-        <div className={styles.layoutThreeCol}>
-          {/* Left Column: Dish Categories (Reference Image 1) */}
+        <div className={styles.layoutTwoCol}>
+          {/* Left Column: Dish Categories */}
           <aside className={styles.categoriesCard} aria-label="Dish Categories">
             <div className={styles.categoriesHeader}>
               <h2 className={styles.categoriesTitle}>Dish Categories</h2>
               <span className={styles.categoryCount}>{categories.length}</span>
             </div>
 
-            <div className={styles.categoryList} role="tablist" aria-orientation="vertical">
-              {/* All Dishes Option */}
-              <button
-                type="button"
-                className={`${styles.categoryItem} ${selectedCategory === "all" ? styles.categoryItemActive : ""}`}
-                onClick={() => setSelectedCategory("all")}
-                aria-selected={selectedCategory === "all"}
+            <ul className={styles.categoryList} aria-label="Category filter">
+              <li
+                className={`${styles.categoryRow} ${selectedCategory === "all" ? styles.categoryRowActive : ""}`}
               >
-                <span className={styles.categoryName}>All Dishes</span>
-                <span className={styles.categoryCount}>{totalDishes}</span>
-              </button>
-
-              {/* Categorized Items */}
-              {categories.map((cat) => (
-                <div
-                  key={cat.id}
-                  className={`${styles.categoryItem} ${selectedCategory === String(cat.id) ? styles.categoryItemActive : ""}`}
-                  onClick={() => setSelectedCategory(String(cat.id))}
-                  role="button"
-                  tabIndex={0}
-                  onKeyDown={(e) => {
-                    if (e.key === "Enter" || e.key === " ") {
-                      setSelectedCategory(String(cat.id));
-                    }
-                  }}
+                <button
+                  type="button"
+                  className={styles.categorySelectBtn}
+                  onClick={() => setSelectedCategory("all")}
+                  aria-pressed={selectedCategory === "all"}
                 >
-                  <span className={styles.categoryName} title={cat.name}>
-                    {cat.name}
-                  </span>
-                  <span className={styles.categoryCount}>{cat.product_count}</span>
-                  <div className={styles.categoryActions} onClick={(e) => e.stopPropagation()}>
+                  <span className={styles.categoryName}>All Dishes</span>
+                  <span className={styles.categoryCount}>{totalDishes}</span>
+                </button>
+              </li>
+
+              {categories.map((cat) => {
+                const isSelected = selectedCategory === String(cat.id);
+                return (
+                  <li
+                    key={cat.id}
+                    className={`${styles.categoryRow} ${isSelected ? styles.categoryRowActive : ""}`}
+                  >
                     <button
                       type="button"
-                      className={styles.iconBtnSmall}
-                      onClick={() => openEditCategoryModal(cat)}
-                      title={`Edit category ${cat.name}`}
-                      aria-label={`Edit category ${cat.name}`}
+                      className={styles.categorySelectBtn}
+                      onClick={() => setSelectedCategory(String(cat.id))}
+                      aria-pressed={isSelected}
                     >
-                      <EditIcon size={14} />
+                      <span className={styles.categoryName} title={cat.name}>
+                        {cat.name}
+                      </span>
+                      <span className={styles.categoryCount}>{cat.product_count}</span>
                     </button>
-                    <button
-                      type="button"
-                      className={`${styles.iconBtnSmall} ${styles.iconBtnSmallDanger}`}
-                      onClick={() => confirmDeleteCategory(cat)}
-                      title={`Delete category ${cat.name}`}
-                      aria-label={`Delete category ${cat.name}`}
-                    >
-                      <TrashIcon size={14} />
-                    </button>
-                  </div>
-                </div>
-              ))}
-            </div>
+                    <div className={styles.categoryActions}>
+                      <button
+                        type="button"
+                        className={styles.iconBtnSmall}
+                        onClick={() => openEditCategoryModal(cat)}
+                        title={`Edit category ${cat.name}`}
+                        aria-label={`Edit category ${cat.name}`}
+                      >
+                        <EditIcon size={14} />
+                      </button>
+                      <button
+                        type="button"
+                        className={`${styles.iconBtnSmall} ${styles.iconBtnSmallDanger}`}
+                        onClick={() => confirmDeleteCategory(cat)}
+                        title={`Delete category ${cat.name}`}
+                        aria-label={`Delete category ${cat.name}`}
+                      >
+                        <TrashIcon size={14} />
+                      </button>
+                    </div>
+                  </li>
+                );
+              })}
+            </ul>
 
             <button
               type="button"
               className={styles.addCategoryBtn}
               onClick={openAddCategoryModal}
             >
-              <PlusIcon size={16} /> New Category
+              <PlusIcon size={15} />
+              <span>New Category</span>
             </button>
           </aside>
 
-          {/* Right Column: Dish Items List (Reference Image 1) */}
+          {/* Right Column: Dish Items List */}
           <section className={styles.dishesContainer} aria-label="Menu Items List">
             {/* Toolbar: Search, Filters, Sorting */}
             <div className={styles.toolbar}>
               <div className={styles.toolbarLeft}>
                 <div className={styles.searchBox}>
-                  <span className={styles.searchIconWrapper}>
-                    <SearchIcon size={16} />
+                  <span className={styles.searchIconWrapper} aria-hidden="true">
+                    <SearchIcon size={15} />
                   </span>
                   <input
                     id={searchInputId}
@@ -738,6 +755,53 @@ export default function ManagerMenuPage() {
                     Unavailable
                   </button>
                 </div>
+
+                {/* Dish Sorting Dropdown */}
+                <div ref={sortControlRef} className={styles.sortControlWrapper}>
+                  <button
+                    type="button"
+                    className={`${styles.sortTriggerBtn} ${
+                      sortMenuOpen ? styles.sortTriggerBtnActive : ""
+                    }`}
+                    onClick={() => setSortMenuOpen((prev) => !prev)}
+                    aria-expanded={sortMenuOpen}
+                    aria-haspopup="listbox"
+                    aria-label={`Dish Sorting: currently sorted by ${sortLabels[sortBy]}`}
+                  >
+                    <DishSortIcon size={15} />
+                    <span>Sort: {sortLabels[sortBy]}</span>
+                  </button>
+
+                  {sortMenuOpen && (
+                    <div
+                      className={styles.sortPopover}
+                      role="listbox"
+                      aria-label="Dish Sorting Options"
+                    >
+                      <div className={styles.sortPopoverHeader}>Sort Dishes By</div>
+                      {(["name-asc", "price-asc", "price-desc"] as SortOption[]).map((opt) => (
+                        <button
+                          key={opt}
+                          type="button"
+                          role="option"
+                          aria-selected={sortBy === opt}
+                          className={`${styles.sortOptionBtn} ${
+                            sortBy === opt ? styles.sortOptionBtnActive : ""
+                          }`}
+                          onClick={() => {
+                            setSortBy(opt);
+                            setSortMenuOpen(false);
+                          }}
+                        >
+                          <span>{sortLabels[opt]}</span>
+                          {sortBy === opt && (
+                            <CheckIcon size={14} className={styles.sortOptionCheck} />
+                          )}
+                        </button>
+                      ))}
+                    </div>
+                  )}
+                </div>
               </div>
             </div>
 
@@ -751,7 +815,7 @@ export default function ManagerMenuPage() {
               </span>
             </div>
 
-            {/* Dish Rows (Reference Image 1) */}
+            {/* Dish Rows */}
             {filteredProducts.length === 0 ? (
               <div className={styles.emptyState}>
                 <p>No dishes match the selected category and filter criteria.</p>
@@ -769,12 +833,12 @@ export default function ManagerMenuPage() {
                         loading="lazy"
                         onError={(e) => {
                           (e.target as HTMLImageElement).src =
-                            "data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='72' height='72' viewBox='0 0 24 24' fill='none' stroke='%238d9b93' stroke-width='1.5'%3E%3Cpath d='M18 2v6a3 3 0 0 1-3 3 3 3 0 0 1-3-3V2'/%3E%3Cpath d='M15 11v11'/%3E%3Cpath d='M5 2v4a3 3 0 0 0 3 3v13'/%3E%3C/svg%3E";
+                            "data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='64' height='64' viewBox='0 0 24 24' fill='none' stroke='%238d9b93' stroke-width='1.5'%3E%3Cpath d='M18 2v6a3 3 0 0 1-3 3 3 3 0 0 1-3-3V2'/%3E%3Cpath d='M15 11v11'/%3E%3Cpath d='M5 2v4a3 3 0 0 0 3 3v13'/%3E%3C/svg%3E";
                         }}
                       />
                     ) : (
-                      <div className={`${styles.dishThumbnail} flex items-center justify-center text-stone-400`}>
-                        <BookOpenIcon size={24} />
+                      <div className={`${styles.dishThumbnail} ${styles.thumbPlaceholder}`}>
+                        <BookOpenIcon size={22} />
                       </div>
                     )}
 
@@ -789,15 +853,15 @@ export default function ManagerMenuPage() {
                       {prod.description && (
                         <p className={styles.dishDescription}>{prod.description}</p>
                       )}
-                      <span className={styles.dishPrice}>${prod.price.toFixed(2)}</span>
+                      <span className={styles.dishPrice}>{currencyFormatter.format(prod.price)}</span>
                     </div>
 
                     {/* Controls & Actions */}
                     <div className={styles.dishControls}>
                       {/* Sales Status Toggle Switch */}
                       <label className={styles.salesStatusToggle}>
-                        <span>Sales Status:</span>
-                        <div className={styles.switch}>
+                        <span>Available</span>
+                        <span className={styles.switch}>
                           <input
                             type="checkbox"
                             checked={prod.is_available}
@@ -805,7 +869,7 @@ export default function ManagerMenuPage() {
                             aria-label={`Toggle sales availability for ${prod.name}`}
                           />
                           <span className={styles.slider} />
-                        </div>
+                        </span>
                       </label>
 
                       {/* Edit & Delete Actions */}
@@ -833,73 +897,9 @@ export default function ManagerMenuPage() {
               </div>
             )}
           </section>
-
-          {/* Right Column: Management Actions Panel (Reference Image) */}
-          <aside className={styles.rightActionsCol} aria-label="Management Actions">
-            <div className={styles.rightActionsCard}>
-              {/* 1. Add Dish (Top of panel) */}
-              <button
-                type="button"
-                className={styles.actionBtnAddDish}
-                onClick={(e) => openAddDishModal(e.currentTarget)}
-                aria-label="Add a new dish to the menu"
-              >
-                <PlusIcon size={16} />
-                <span>Add Dish</span>
-              </button>
-
-              {/* 2. Dish Sorting (Immediately below Add Dish) */}
-              <div ref={sortControlRef} className={styles.sortControlWrapper}>
-                <button
-                  type="button"
-                  className={`${styles.actionBtnDishSort} ${
-                    sortMenuOpen ? styles.actionBtnDishSortActive : ""
-                  }`}
-                  onClick={() => setSortMenuOpen((prev) => !prev)}
-                  aria-expanded={sortMenuOpen}
-                  aria-haspopup="listbox"
-                  aria-label={`Dish Sorting: currently sorted by ${sortLabels[sortBy]}`}
-                >
-                  <DishSortIcon size={16} />
-                  <span>Dish Sorting</span>
-                </button>
-
-                {/* Popover Dropdown */}
-                {sortMenuOpen && (
-                  <div
-                    className={styles.sortPopover}
-                    role="listbox"
-                    aria-label="Dish Sorting Options"
-                  >
-                    <div className={styles.sortPopoverHeader}>Sort Dishes By</div>
-                    {(["name-asc", "price-asc", "price-desc"] as SortOption[]).map((opt) => (
-                      <button
-                        key={opt}
-                        type="button"
-                        role="option"
-                        aria-selected={sortBy === opt}
-                        className={`${styles.sortOptionBtn} ${
-                          sortBy === opt ? styles.sortOptionBtnActive : ""
-                        }`}
-                        onClick={() => {
-                          setSortBy(opt);
-                          setSortMenuOpen(false);
-                        }}
-                      >
-                        <span>{sortLabels[opt]}</span>
-                        {sortBy === opt && (
-                          <CheckIcon size={14} className={styles.sortOptionCheck} />
-                        )}
-                      </button>
-                    ))}
-                  </div>
-                )}
-              </div>
-            </div>
-          </aside>
         </div>
       ) : (
-        /* Preview Grid (Reference Image 3) */
+        /* Preview Grid */
         <section className={styles.previewGrid} aria-label="Customer View Catalog Preview">
           {filteredProducts.map((prod) => (
             <article key={prod.id} className={styles.previewCard}>
@@ -911,25 +911,26 @@ export default function ManagerMenuPage() {
                   loading="lazy"
                   onError={(e) => {
                     (e.target as HTMLImageElement).src =
-                      "data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='100%25' height='180' viewBox='0 0 24 24' fill='none' stroke='%238d9b93' stroke-width='1.5'%3E%3Cpath d='M18 2v6a3 3 0 0 1-3 3 3 3 0 0 1-3-3V2'/%3E%3Cpath d='M15 11v11'/%3E%3Cpath d='M5 2v4a3 3 0 0 0 3 3v13'/%3E%3C/svg%3E";
+                      "data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='100%25' height='176' viewBox='0 0 24 24' fill='none' stroke='%238d9b93' stroke-width='1.5'%3E%3Cpath d='M18 2v6a3 3 0 0 1-3 3 3 3 0 0 1-3-3V2'/%3E%3Cpath d='M15 11v11'/%3E%3Cpath d='M5 2v4a3 3 0 0 0 3 3v13'/%3E%3C/svg%3E";
                   }}
                 />
               ) : (
-                <div className={`${styles.previewImage} flex items-center justify-center text-stone-400 bg-stone-100`}>
-                  <BookOpenIcon size={32} />
+                <div className={`${styles.previewImage} ${styles.thumbPlaceholder}`}>
+                  <BookOpenIcon size={28} />
                 </div>
               )}
               <div className={styles.previewBody}>
                 <h3 className={styles.previewDishTitle}>{prod.name}</h3>
                 {prod.description && <p className={styles.previewDishDesc}>{prod.description}</p>}
                 <div className={styles.previewFooter}>
-                  <span className={styles.previewPrice}>${prod.price.toFixed(2)}</span>
+                  <span className={styles.previewPrice}>{currencyFormatter.format(prod.price)}</span>
                   <span
                     className={`${styles.previewBadge} ${
                       prod.is_available ? styles.previewAvailable : styles.previewUnavailable
                     }`}
                   >
-                    {prod.is_available ? "In Stock" : "Sold Out"}
+                    <span className={styles.statusDot} aria-hidden="true" />
+                    <span>{prod.is_available ? "In Stock" : "Sold Out"}</span>
                   </span>
                 </div>
               </div>
@@ -1083,24 +1084,50 @@ export default function ManagerMenuPage() {
                   )}
                 </div>
 
-                {/* Category Selection */}
-                <div className={styles.formGroup}>
-                  <label htmlFor={dishCatInputId} className={styles.formLabel}>
-                    Category *
-                  </label>
-                  <select
-                    id={dishCatInputId}
-                    className={styles.formSelect}
-                    value={dishCategoryId}
-                    onChange={(e) => setDishCategoryId(Number(e.target.value))}
-                    required
-                  >
-                    {categories.map((c) => (
-                      <option key={c.id} value={c.id}>
-                        {c.name}
-                      </option>
-                    ))}
-                  </select>
+                {/* Category Selection & Price */}
+                <div className={styles.formRowTwo}>
+                  <div className={styles.formGroup}>
+                    <label htmlFor={dishCatInputId} className={styles.formLabel}>
+                      Category *
+                    </label>
+                    <select
+                      id={dishCatInputId}
+                      className={styles.formSelect}
+                      value={dishCategoryId}
+                      onChange={(e) => setDishCategoryId(Number(e.target.value))}
+                      required
+                    >
+                      {categories.map((c) => (
+                        <option key={c.id} value={c.id}>
+                          {c.name}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+
+                  {/* Price (Philippine Pesos) */}
+                  <div className={styles.formGroup}>
+                    <label htmlFor={dishPriceInputId} className={styles.formLabel}>
+                      Price (PHP ₱) *
+                    </label>
+                    <div className={styles.priceInputWrapper}>
+                      <span className={styles.currencySymbol} aria-hidden="true">
+                        ₱
+                      </span>
+                      <input
+                        id={dishPriceInputId}
+                        type="number"
+                        step="0.01"
+                        min="0.01"
+                        className={`${styles.formInput} ${styles.priceInput}`}
+                        value={dishPrice}
+                        onChange={(e) => setDishPrice(e.target.value)}
+                        placeholder="0.00"
+                        required
+                        aria-label="Price in Philippine Pesos"
+                      />
+                    </div>
+                  </div>
                 </div>
 
                 {/* Dish Name */}
@@ -1118,30 +1145,6 @@ export default function ManagerMenuPage() {
                     required
                     maxLength={100}
                   />
-                </div>
-
-                {/* Price (Philippine Pesos) */}
-                <div className={styles.formGroup}>
-                  <label htmlFor={dishPriceInputId} className={styles.formLabel}>
-                    Price (PHP ₱) *
-                  </label>
-                  <div className={styles.priceInputWrapper}>
-                    <span className={styles.currencySymbol} aria-hidden="true">
-                      ₱
-                    </span>
-                    <input
-                      id={dishPriceInputId}
-                      type="number"
-                      step="0.01"
-                      min="0.01"
-                      className={`${styles.formInput} ${styles.priceInput}`}
-                      value={dishPrice}
-                      onChange={(e) => setDishPrice(e.target.value)}
-                      placeholder="0.00"
-                      required
-                      aria-label="Price in Philippine Pesos"
-                    />
-                  </div>
                 </div>
 
                 {/* Description */}
@@ -1292,10 +1295,10 @@ export default function ManagerMenuPage() {
         </div>
       )}
 
-      {/* Delete Confirmation Modal (Section 6.7) */}
+      {/* Delete Confirmation Modal */}
       {deleteModalOpen && itemToDelete && (
         <div className={styles.modalOverlay} role="dialog" aria-modal="true" aria-labelledby="delModalTitle">
-          <div className={styles.modalContent} style={{ maxWidth: "480px" }}>
+          <div className={`${styles.modalContent} ${styles.modalContentNarrow}`}>
             <div className={styles.modalHeader}>
               <h2 id="delModalTitle" className={styles.modalTitle}>
                 Confirm Removal
@@ -1311,17 +1314,17 @@ export default function ManagerMenuPage() {
             </div>
 
             <div className={styles.modalBody}>
-              <p className="text-sm text-[var(--text-secondary)] leading-relaxed">
+              <p className={styles.confirmLead}>
                 Are you sure you want to remove{" "}
-                <strong className="text-[var(--text-primary)]">&quot;{itemToDelete.name}&quot;</strong>?
+                <strong>&quot;{itemToDelete.name}&quot;</strong>?
               </p>
               {itemToDelete.type === "product" ? (
-                <p className="text-xs text-[var(--text-muted)] bg-amber-50 border border-amber-200 p-3 rounded">
+                <p className={`${styles.confirmNote} ${styles.confirmNoteWarning}`}>
                   This dish will be safely archived and hidden from live customer ordering, preserving all historical
                   kitchen receipts and reports.
                 </p>
               ) : (
-                <p className="text-xs text-[var(--text-muted)] bg-stone-50 border border-stone-200 p-3 rounded">
+                <p className={`${styles.confirmNote} ${styles.confirmNoteNeutral}`}>
                   Categories containing active dishes cannot be deleted. Any dishes must be reassigned or removed first.
                 </p>
               )}

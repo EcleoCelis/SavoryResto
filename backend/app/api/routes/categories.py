@@ -1,7 +1,8 @@
 from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.orm import Session
 
-from app.core.security import require_staff_roles
+from app.core.permissions import Permission
+from app.core.security import require_permission
 from app.db.database import get_db
 from app.schemas.category import CategoryCreate, CategoryDetailResponse, CategoryResponse, CategoryUpdate
 from app.services.catalog_service import (
@@ -24,7 +25,7 @@ def get_categories(db: Session = Depends(get_db)):
 @router.get(
     "/manage",
     response_model=list[CategoryDetailResponse],
-    dependencies=[Depends(require_staff_roles("manager"))],
+    dependencies=[Depends(require_permission(Permission.MENU_MANAGE))],
 )
 def get_categories_for_manager(db: Session = Depends(get_db)):
     return list_manager_categories(db)
@@ -34,7 +35,7 @@ def get_categories_for_manager(db: Session = Depends(get_db)):
     "",
     response_model=CategoryDetailResponse,
     status_code=status.HTTP_201_CREATED,
-    dependencies=[Depends(require_staff_roles("manager"))],
+    dependencies=[Depends(require_permission(Permission.MENU_MANAGE))],
 )
 def create_category_endpoint(
     category_in: CategoryCreate,
@@ -57,7 +58,7 @@ def create_category_endpoint(
 @router.put(
     "/{category_id}",
     response_model=CategoryDetailResponse,
-    dependencies=[Depends(require_staff_roles("manager"))],
+    dependencies=[Depends(require_permission(Permission.MENU_MANAGE))],
 )
 def update_category_endpoint(
     category_id: int,
@@ -85,7 +86,7 @@ def update_category_endpoint(
 
 @router.delete(
     "/{category_id}",
-    dependencies=[Depends(require_staff_roles("manager"))],
+    dependencies=[Depends(require_permission(Permission.MENU_MANAGE))],
 )
 def delete_category_endpoint(
     category_id: int,

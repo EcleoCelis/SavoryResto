@@ -1,0 +1,61 @@
+.periodGroup {
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+  padding: 3px;
+  background-color: var(--brand-cream-surface);
+  border: 1px solid var(--border-subtle);
+  border-radius: 8px;
+}
+
+.periodBtn {
+  appearance: none;
+  border: 0;
+  background: transparent;
+  color: var(--text-muted);
+  font-family: inherit;
+  font-size: 0.8125rem;
+  font-weight: 500;
+  line-height: 1.25;
+  padding: 6px 12px;
+  border-radius: 6px;
+  cursor: pointer;
+  white-space: nowrap;
+  transition: color 0.15s ease, background-color 0.15s ease, box-shadow 0.15s ease;
+}
+
+.periodBtn:hover:not(:disabled) {
+  color: var(--text-primary);
+}
+
+.periodBtn:focus-visible {
+  outline: 2px solid var(--brand-gold);
+  outline-offset: 1px;
+}
+
+.periodBtnActive {
+  background-color: var(--brand-cream-card);
+  color: var(--text-primary);
+  font-weight: 600;
+  box-shadow: 0 1px 2px rgba(9, 43, 28, 0.08);
+}
+
+@media (max-width: 640px) {
+  .periodGroup {
+    width: 100%;
+    display: grid;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
+
+  .periodBtn {
+    padding: 7px 6px;
+    font-size: 0.75rem;
+    text-align: center;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .periodBtn {
+    transition: none;
+  }
+}

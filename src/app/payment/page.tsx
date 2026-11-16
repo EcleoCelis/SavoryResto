@@ -4,6 +4,7 @@ import Link from "next/link";
 import { useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 
+import { CustomerRouteGuard } from "../../components/auth/CustomerRouteGuard";
 import { useCart } from "../../components/cart/CartProvider";
 import { useFulfillment } from "../../components/fulfillment/FulfillmentProvider";
 import { Footer } from "../../components/layout/Footer";
@@ -25,7 +26,7 @@ const currencyFormatter = new Intl.NumberFormat("en-PH", {
   minimumFractionDigits: 2,
 });
 
-export default function PaymentPage() {
+function PaymentContent() {
   const router = useRouter();
   const { items, clearCart } = useCart();
   const { selection, clearSelection } = useFulfillment();
@@ -326,5 +327,13 @@ export default function PaymentPage() {
       </main>
       <Footer />
     </div>
+  );
+}
+
+export default function PaymentPage() {
+  return (
+    <CustomerRouteGuard>
+      <PaymentContent />
+    </CustomerRouteGuard>
   );
 }

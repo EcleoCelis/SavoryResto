@@ -128,6 +128,8 @@ class StaffApiIntegrationTests(TestCase):
         self.assertEqual(manager["role"], "manager")
         self.assertEqual(self._request("/api/v1/staff/auth/me", headers={"Cookie": manager_cookie})[1]["role"], "manager")
         self.assertEqual(self._request("/api/v1/manager/orders", headers={"Cookie": manager_cookie})[0], 200)
+        # Strict portal isolation: manager is denied access to KDS endpoints
+        self.assertEqual(self._request("/api/v1/kds/orders", headers={"Cookie": manager_cookie})[0], 403)
         inventory_status, inventory, _ = self._request("/api/v1/inventory", headers={"Cookie": manager_cookie})
         self.assertEqual(inventory_status, 200)
         transaction_status, transaction, _ = self._request(
@@ -266,7 +268,9 @@ class StaffApiIntegrationTests(TestCase):
             self.assertEqual(customer_order["status"], "ready")
             self.assertEqual(customer_order["table_number"], table["table_number"])
             self.assertEqual(self._request(f"/api/v1/kds/orders/{order_id}/status", method="PATCH", body={"status": "completed"}, headers={"Cookie": kitchen_cookie})[0], 403)
-            self.assertEqual(self._request(f"/api/v1/kds/orders/{order_id}/status", method="PATCH", body={"status": "completed"}, headers={"Cookie": manager_cookie})[0], 200)
+            self.assertEqual(self._request(f"/api/v1/kds/orders/{order_id}/status", method="PATCH", body={"status": "completed"}, headers={"Cookie": manager_cookie})[0], 403)
+            self.assertEqual(self._request(f"/api/v1/manager/orders/{order_id}/status", method="PATCH", body={"status": "completed"}, headers={"Cookie": kitchen_cookie})[0], 403)
+            self.assertEqual(self._request(f"/api/v1/manager/orders/{order_id}/status", method="PATCH", body={"status": "completed"}, headers={"Cookie": manager_cookie})[0], 200)
             _, completed_queue, _ = self._request("/api/v1/kds/orders?status=completed", headers={"Cookie": kitchen_cookie})
             self.assertIn(order_id, [entry["id"] for entry in completed_queue])
         finally:
@@ -306,7 +310,7 @@ class StaffApiIntegrationTests(TestCase):
                 self.assertEqual(status, 200)
                 self.assertEqual(updated["status"], next_status)
 
-            completed_status, completed, _ = self._request(f"/api/v1/kds/orders/{order_id}/status", method="PATCH", body={"status": "completed"}, headers={"Cookie": manager_cookie})
+            completed_status, completed, _ = self._request(f"/api/v1/manager/orders/{order_id}/status", method="PATCH", body={"status": "completed"}, headers={"Cookie": manager_cookie})
             self.assertEqual(completed_status, 200)
             self.assertEqual(completed["status"], "completed")
             _, customer_order, _ = self._request(f"/api/v1/orders/{order_id}", headers=customer_headers)

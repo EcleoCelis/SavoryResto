@@ -1,0 +1,110 @@
+.wrapper {
+  min-height: 100vh;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 32px 20px;
+  background: var(--bg-cream, #fbf9f4);
+  color: var(--text-primary, #17271f);
+}
+
+.card {
+  width: 100%;
+  max-width: 520px;
+  background: #ffffff;
+  border: 1px solid rgba(23, 63, 53, 0.14);
+  border-radius: 18px;
+  padding: 36px 32px;
+  box-shadow: 0 18px 45px rgba(15, 38, 28, 0.08);
+  text-align: center;
+}
+
+.badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 14px;
+  border-radius: 999px;
+  background: #fef2f2;
+  color: #b91c1c;
+  font-size: 0.75rem;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  margin-bottom: 18px;
+}
+
+.title {
+  margin: 0 0 12px;
+  font-size: 1.65rem;
+  font-weight: 700;
+  color: #132a20;
+  line-height: 1.25;
+}
+
+.description {
+  margin: 0 0 24px;
+  font-size: 0.96rem;
+  line-height: 1.6;
+  color: #4b5d53;
+}
+
+.roleBox {
+  background: #f6f4ee;
+  border: 1px solid rgba(23, 63, 53, 0.1);
+  border-radius: 12px;
+  padding: 14px 16px;
+  margin-bottom: 24px;
+  font-size: 0.875rem;
+  color: #2f4339;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px;
+  justify-content: center;
+}
+
+.primaryBtn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 11px 20px;
+  border-radius: 10px;
+  background: #173f35;
+  color: #ffffff;
+  font-size: 0.9rem;
+  font-weight: 600;
+  text-decoration: none;
+  border: none;
+  cursor: pointer;
+  transition: background-color 0.15s ease;
+}
+
+.primaryBtn:hover {
+  background: #113028;
+}
+
+.secondaryBtn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 11px 20px;
+  border-radius: 10px;
+  background: transparent;
+  color: #173f35;
+  font-size: 0.9rem;
+  font-weight: 600;
+  text-decoration: none;
+  border: 1px solid rgba(23, 63, 53, 0.25);
+  cursor: pointer;
+  transition: background-color 0.15s ease;
+}
+
+.secondaryBtn:hover {
+  background: rgba(23, 63, 53, 0.06);
+}

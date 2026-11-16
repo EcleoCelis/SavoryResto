@@ -51,19 +51,6 @@ export function KdsSidebar({ activeFilter, counts, isOpen, onClose, onLogout, st
         return <Link key={item.status} href={href} onClick={onClose} className={isActive ? styles.active : ""} aria-current={isActive ? "page" : undefined}><Icon name={item.icon} /><span>{item.label}</span>{count !== undefined ? <b aria-label={`${count} ${item.label}`}>{count}</b> : null}</Link>;
       })}
     </nav>
-    {staff?.role === "manager" ? (
-      <nav aria-label="Management navigation" className={styles.navigation}>
-        <p>Operations</p>
-        <Link href="/manager" onClick={onClose}>
-          <Icon name="grid" />
-          <span>Manager Dashboard</span>
-        </Link>
-        <Link href="/manager/menu" onClick={onClose}>
-          <Icon name="archive" />
-          <span>Menu Management</span>
-        </Link>
-      </nav>
-    ) : null}
-    <div className={styles.session}>{staff ? <><span className={styles.avatar} aria-hidden="true">{staff.name.slice(0, 1).toUpperCase()}</span><div><strong>{staff.name}</strong><span>{staff.role === "manager" ? "Manager" : "Kitchen staff"}</span></div></> : null}<button type="button" onClick={onLogout}>Sign out</button></div>
+    <div className={styles.session}>{staff ? <><span className={styles.avatar} aria-hidden="true">{staff.name.slice(0, 1).toUpperCase()}</span><div><strong>{staff.name}</strong><span>Kitchen staff</span></div></> : null}<button type="button" onClick={onLogout}>Sign out</button></div>
   </aside>;
 }

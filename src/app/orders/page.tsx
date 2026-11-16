@@ -4,6 +4,7 @@ import Link from "next/link";
 import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 
+import { CustomerRouteGuard } from "../../components/auth/CustomerRouteGuard";
 import { Footer } from "../../components/layout/Footer";
 import { Header } from "../../components/layout/Header";
 import { ArrowLeftIcon, ArrowRightIcon, RefreshIcon } from "../../components/ui/Icons";
@@ -23,7 +24,7 @@ const dateFormatter = new Intl.DateTimeFormat("en-PH", {
   timeStyle: "short",
 });
 
-export default function OrdersPage() {
+function OrdersContent() {
   const router = useRouter();
   const [history, setHistory] = useState<OrderHistory | null>(null);
   const [error, setError] = useState("");
@@ -181,5 +182,13 @@ export default function OrdersPage() {
       </main>
       <Footer />
     </div>
+  );
+}
+
+export default function OrdersPage() {
+  return (
+    <CustomerRouteGuard>
+      <OrdersContent />
+    </CustomerRouteGuard>
   );
 }

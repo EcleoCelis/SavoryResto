@@ -32,7 +32,6 @@ interface NavItemConfig {
   label: string;
   href: string;
   icon: React.ComponentType<{ size?: number; className?: string }>;
-  badge?: string;
 }
 
 interface NavGroupConfig {
@@ -42,25 +41,25 @@ interface NavGroupConfig {
 
 const NAV_GROUPS: NavGroupConfig[] = [
   {
-    title: "Menu",
+    title: "Operations",
     items: [
       { id: "dashboard", label: "Dashboard", href: "/manager", icon: DashboardIcon },
       { id: "menu", label: "Menu", href: "/manager/menu", icon: BookOpenIcon },
       { id: "tables", label: "Tables", href: "/manager/tables", icon: TableIcon },
-    ],
-  },
-  {
-    title: "Offering",
-    items: [
       { id: "orders", label: "Orders", href: "/manager/orders", icon: ClipboardListIcon },
-      { id: "payments", label: "Payments", href: "/manager/payments", icon: CreditCardIcon, badge: "New" },
-      { id: "customer", label: "Customer", href: "/manager/customer", icon: UsersIcon },
     ],
   },
   {
-    title: "Back Office",
+    title: "Guests & Billing",
     items: [
+      { id: "payments", label: "Payments", href: "/manager/payments", icon: CreditCardIcon },
+      { id: "customer", label: "Customer", href: "/manager/customer", icon: UsersIcon },
       { id: "testimonial", label: "Testimonial", href: "/manager/testimonial", icon: MessageSquareIcon },
+    ],
+  },
+  {
+    title: "Administration",
+    items: [
       { id: "user", label: "User", href: "/manager/user", icon: UserCogIcon },
       { id: "reports", label: "Reports", href: "/manager/reports", icon: BarChartIcon },
       { id: "settings", label: "Settings", href: "/manager/settings", icon: SettingsIcon },
@@ -102,13 +101,14 @@ export function ManagerSidebar({ staff, mobileOpen, onCloseMobile }: ManagerSide
   }
 
   const staffName = staff?.name || "Manager";
-  const userInitials = staffName
-    .split(" ")
-    .map((n) => n[0])
-    .filter(Boolean)
-    .slice(0, 2)
-    .join("")
-    .toUpperCase() || "SB";
+  const userInitials =
+    staffName
+      .split(" ")
+      .map((n) => n[0])
+      .filter(Boolean)
+      .slice(0, 2)
+      .join("")
+      .toUpperCase() || "SB";
 
   return (
     <>
@@ -131,16 +131,16 @@ export function ManagerSidebar({ staff, mobileOpen, onCloseMobile }: ManagerSide
           </div>
           <div className={styles.brandText}>
             <span className={styles.brandName}>SavoryBites</span>
-            <span className={styles.brandSub}>Restaurant Admin</span>
+            <span className={styles.brandSub}>Manager Portal</span>
           </div>
           {mobileOpen && (
             <button
               type="button"
-              className="lg:hidden ml-auto p-1 text-[var(--text-muted)] hover:text-[var(--text-primary)]"
+              className={styles.mobileCloseBtn}
               onClick={onCloseMobile}
               aria-label="Close navigation menu"
             >
-              <CloseIcon size={20} />
+              <CloseIcon size={18} />
             </button>
           )}
         </div>
@@ -154,15 +154,12 @@ export function ManagerSidebar({ staff, mobileOpen, onCloseMobile }: ManagerSide
             <span className={styles.userName} title={staffName}>
               {staffName}
             </span>
-            <span className={styles.userRole}>
-              <span className={styles.userStatusDot} aria-hidden="true" />
-              Manager
-            </span>
+            <span className={styles.userRole}>Manager</span>
           </div>
         </div>
 
         {/* Grouped Navigation Links */}
-        <nav className={styles.navScroll}>
+        <nav className={styles.navScroll} aria-label="Manager sections">
           {NAV_GROUPS.map((group) => (
             <div key={group.title} className={styles.navGroup}>
               <span className={styles.navGroupLabel}>{group.title}</span>
@@ -177,10 +174,9 @@ export function ManagerSidebar({ staff, mobileOpen, onCloseMobile }: ManagerSide
                     aria-current={active ? "page" : undefined}
                   >
                     <span className={styles.navIcon} aria-hidden="true">
-                      <IconComponent size={18} />
+                      <IconComponent size={17} />
                     </span>
                     <span className={styles.navItemText}>{item.label}</span>
-                    {item.badge && <span className={styles.badgeNew}>{item.badge}</span>}
                   </Link>
                 );
               })}
@@ -190,16 +186,13 @@ export function ManagerSidebar({ staff, mobileOpen, onCloseMobile }: ManagerSide
 
         {/* Sidebar Footer */}
         <div className={styles.footer}>
-          <Link href="/kds" className={styles.kdsLink} target="_blank" rel="noopener noreferrer">
-            Switch to KDS &rarr;
-          </Link>
           <button
             type="button"
             className={styles.logoutButton}
             onClick={() => void handleLogout()}
             aria-label="Sign out of manager session"
           >
-            <LogOutIcon size={18} aria-hidden="true" />
+            <LogOutIcon size={17} aria-hidden="true" />
             <span>Sign out</span>
           </button>
         </div>

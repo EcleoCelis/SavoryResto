@@ -30,12 +30,14 @@ class Permission(StrEnum):
     SECURITY_MANAGE = "security.manage"
     SYSTEM_CONFIG_MANAGE = "system_config.manage"
     AUDIT_VIEW = "audit.view"
+    ORDER_MONITOR = "order.monitor"
     ORDER_COMPLETE = "order.complete"
     CUSTOMER_VIEW = "customer.view"
     CUSTOMER_MANAGE = "customer.manage"
 
 
 # Authoritative mapping of the three application roles to permissions:
+# Manager and Kitchen Staff (KDS) are strictly isolated with no inherited portal permissions.
 ROLE_PERMISSIONS: dict[str, frozenset[Permission]] = {
     "customer": frozenset({
         Permission.ORDER_CREATE,
@@ -47,7 +49,7 @@ ROLE_PERMISSIONS: dict[str, frozenset[Permission]] = {
         Permission.KDS_UPDATE,
     }),
     "manager": frozenset({
-        # Full operational authority
+        # Operational management & administrative authority (excludes KDS portal access)
         Permission.INVENTORY_MANAGE,
         Permission.MENU_MANAGE,
         Permission.SALES_VIEW,
@@ -56,11 +58,10 @@ ROLE_PERMISSIONS: dict[str, frozenset[Permission]] = {
         Permission.SECURITY_MANAGE,
         Permission.SYSTEM_CONFIG_MANAGE,
         Permission.AUDIT_VIEW,
+        Permission.ORDER_MONITOR,
         Permission.ORDER_COMPLETE,
-        Permission.KDS_VIEW,
         Permission.CUSTOMER_VIEW,
         Permission.CUSTOMER_MANAGE,
-        # Manager is also authorized to view KDS queue for service supervision
     }),
 }
 

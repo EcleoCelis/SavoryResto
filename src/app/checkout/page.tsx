@@ -5,6 +5,7 @@ import Link from "next/link";
 import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 
+import { CustomerRouteGuard } from "../../components/auth/CustomerRouteGuard";
 import { useCart } from "../../components/cart/CartProvider";
 import { useFulfillment } from "../../components/fulfillment/FulfillmentProvider";
 import { Footer } from "../../components/layout/Footer";
@@ -25,7 +26,7 @@ const currencyFormatter = new Intl.NumberFormat("en-PH", {
   minimumFractionDigits: 2,
 });
 
-export default function CheckoutPage() {
+function CheckoutContent() {
   const router = useRouter();
   const { items } = useCart();
   const { selection } = useFulfillment();
@@ -394,5 +395,13 @@ export default function CheckoutPage() {
       </main>
       <Footer />
     </div>
+  );
+}
+
+export default function CheckoutPage() {
+  return (
+    <CustomerRouteGuard>
+      <CheckoutContent />
+    </CustomerRouteGuard>
   );
 }

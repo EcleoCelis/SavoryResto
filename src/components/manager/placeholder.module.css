@@ -1,27 +1,32 @@
 .container {
   display: flex;
   flex-direction: column;
-  gap: 24px;
+  gap: 20px;
+  width: 100%;
 }
 
 .header {
   display: flex;
   flex-direction: column;
-  gap: 6px;
+  gap: 4px;
+  padding-bottom: 16px;
+  border-bottom: 1px solid var(--border-subtle);
 }
 
 .title {
-  font-size: 1.75rem;
-  font-weight: 700;
-  color: var(--text-primary);
+  font-size: 1.5rem;
+  font-weight: 600;
+  color: var(--brand-green-deep);
   margin: 0;
-  letter-spacing: -0.01em;
+  letter-spacing: -0.015em;
+  line-height: 1.25;
 }
 
 .subtitle {
-  font-size: 0.925rem;
+  font-size: 0.875rem;
   color: var(--text-muted);
   margin: 0;
+  line-height: 1.45;
 }
 
 .card {
@@ -30,49 +35,46 @@
   align-items: center;
   justify-content: center;
   text-align: center;
-  background-color: #ffffff;
-  border: 1px dashed var(--border-medium);
-  border-radius: var(--radius-lg);
-  padding: 64px 32px;
-  gap: 16px;
-  box-shadow: var(--shadow-sm);
+  background-color: var(--brand-cream-card);
+  border: 1px solid var(--border-subtle);
+  border-radius: 12px;
+  padding: 48px 24px;
+  gap: 10px;
 }
 
 .iconWrapper {
-  width: 56px;
-  height: 56px;
-  border-radius: var(--radius-full);
+  width: 44px;
+  height: 44px;
+  border-radius: 10px;
   background: var(--brand-green-tint);
-  border: 1px solid var(--brand-green-border);
   color: var(--brand-green);
   display: flex;
   align-items: center;
   justify-content: center;
+  margin-bottom: 4px;
+}
+
+.statusLabel {
+  font-size: 0.75rem;
+  font-weight: 500;
+  color: var(--text-muted);
+  background-color: var(--brand-cream-surface);
+  border: 1px solid var(--border-subtle);
+  padding: 3px 10px;
+  border-radius: 6px;
 }
 
 .cardTitle {
-  font-size: 1.15rem;
+  font-size: 1.05rem;
   font-weight: 600;
   color: var(--text-primary);
-  margin: 0;
+  margin: 4px 0 0;
 }
 
 .cardDescription {
-  font-size: 0.9rem;
+  font-size: 0.875rem;
   color: var(--text-muted);
-  max-width: 440px;
+  max-width: 400px;
   margin: 0;
   line-height: 1.5;
-}
-
-.badge {
-  display: inline-flex;
-  align-items: center;
-  padding: 4px 12px;
-  border-radius: var(--radius-full);
-  font-size: 0.775rem;
-  font-weight: 600;
-  background-color: var(--brand-gold-tint);
-  border: 1px solid var(--brand-gold-border);
-  color: var(--brand-gold-dark);
 }

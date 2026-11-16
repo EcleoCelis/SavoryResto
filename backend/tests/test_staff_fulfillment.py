@@ -18,7 +18,7 @@ from app.db.models.restaurant_table import RestaurantTable
 from app.db.models.staff import Role, StaffUser
 from app.services.fulfillment_service import validate_fulfillment
 from app.services.inventory_service import deduct_inventory_for_confirmed_order, list_inventory_items, record_inventory_transaction
-from app.services.kds_service import list_kds_orders, update_kds_order_status
+from app.services.kds_service import list_kds_orders, update_kds_order_status, update_manager_order_status
 from app.services.order_service import cancel_customer_order
 from app.schemas.inventory import InventoryTransactionCreate
 from app.services.checkout_service import quote_checkout_items
@@ -113,7 +113,11 @@ class StaffFulfillmentTests(TestCase):
         self.assertEqual(update_kds_order_status(self.db, self.kitchen, self.order.id, OrderStatus.READY).status, OrderStatus.READY)
         with self.assertRaises(PermissionError):
             update_kds_order_status(self.db, self.kitchen, self.order.id, OrderStatus.COMPLETED)
-        self.assertEqual(update_kds_order_status(self.db, self.manager, self.order.id, OrderStatus.COMPLETED).status, OrderStatus.COMPLETED)
+        with self.assertRaises(PermissionError):
+            update_kds_order_status(self.db, self.manager, self.order.id, OrderStatus.COMPLETED)
+        with self.assertRaises(PermissionError):
+            update_manager_order_status(self.db, self.kitchen, self.order.id, OrderStatus.COMPLETED)
+        self.assertEqual(update_manager_order_status(self.db, self.manager, self.order.id, OrderStatus.COMPLETED).status, OrderStatus.COMPLETED)
         self.assertEqual(list_kds_orders(self.db), [])
         self.assertEqual(list_kds_orders(self.db, OrderStatus.COMPLETED)[0].id, self.order.id)
 
