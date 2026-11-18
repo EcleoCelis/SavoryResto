@@ -1,16 +1,21 @@
+"use client";
+
 import Link from "next/link";
-import { RESTAURANT_INFO } from "../../config/restaurant";
+import { useRestaurantSettings } from "../settings/RestaurantSettingsProvider";
 import { ArrowRightIcon } from "../ui/Icons";
 import styles from "../../app/home.module.css";
 
 export function Footer() {
+  const { settings } = useRestaurantSettings();
+  const info = settings.restaurant;
+
   return (
     <footer className={styles.footer}>
       <div>
-        <b>{RESTAURANT_INFO.name}</b>
+        <b>{info.name}</b>
         <p>Fresh food, made with care and delivered with warmth.</p>
         <p style={{ marginTop: "12px", fontSize: "11px", color: "var(--gold)" }}>
-          {RESTAURANT_INFO.tagline}
+          {info.tagline}
         </p>
       </div>
 
@@ -32,21 +37,21 @@ export function Footer() {
 
       <div>
         <h2>Contact</h2>
-        <p>{RESTAURANT_INFO.locality}</p>
+        <p>{info.locality}</p>
         <p>
           <a
-            href={`tel:${RESTAURANT_INFO.phone.replace(/[\s-]/g, "")}`}
+            href={`tel:${info.phone.replace(/[\s-]/g, "")}`}
             style={{ color: "inherit", textDecoration: "none" }}
           >
-            {RESTAURANT_INFO.phone}
+            {info.phone}
           </a>
         </p>
         <p>
           <a
-            href={`mailto:${RESTAURANT_INFO.email}`}
+            href={`mailto:${info.email}`}
             style={{ color: "inherit", textDecoration: "none" }}
           >
-            {RESTAURANT_INFO.email}
+            {info.email}
           </a>
         </p>
         <Link
@@ -65,8 +70,8 @@ export function Footer() {
       </div>
 
       <small>
-        Copyright {new Date().getFullYear()} {RESTAURANT_INFO.name}. All rights
-        reserved. {RESTAURANT_INFO.fullAddress}.
+        Copyright {new Date().getFullYear()} {info.name}. All rights
+        reserved. {info.full_address}.
       </small>
     </footer>
   );

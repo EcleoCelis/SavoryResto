@@ -1,11 +1,14 @@
 from fastapi import APIRouter, Depends, HTTPException, status
+from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
 from app.core.permissions import Permission
 from app.core.security import require_permission
 from app.db.database import get_db
+from app.db.models.product import MenuProduct
 from app.schemas.category import CategoryCreate, CategoryDetailResponse, CategoryResponse, CategoryUpdate
 from app.services.catalog_service import (
+    CatalogConflictError,
     create_category,
     delete_category,
     list_categories,
@@ -43,6 +46,8 @@ def create_category_endpoint(
 ):
     try:
         category = create_category(db, category_in)
+    except CatalogConflictError as exc:
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=str(exc))
     except ValueError as exc:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc))
     return CategoryDetailResponse(
@@ -52,6 +57,7 @@ def create_category_endpoint(
         display_order=category.display_order,
         is_active=category.is_active,
         product_count=0,
+        updated_at=category.updated_at,
     )
 
 
@@ -67,20 +73,27 @@ def update_category_endpoint(
 ):
     try:
         category = update_category(db, category_id, category_in)
+    except CatalogConflictError as exc:
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=str(exc))
     except ValueError as exc:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc))
     if not category:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Category not found.")
-    
-    # Get current product count for the response
-    counts = {c["id"]: c["product_count"] for c in list_manager_categories(db)}
+
+    product_count = db.scalar(
+        select(func.count(MenuProduct.id)).where(
+            MenuProduct.category_id == category.id,
+            MenuProduct.deleted_at.is_(None),
+        )
+    ) or 0
     return CategoryDetailResponse(
         id=category.id,
         name=category.name,
         description=category.description,
         display_order=category.display_order,
         is_active=category.is_active,
-        product_count=counts.get(category.id, 0),
+        product_count=product_count,
+        updated_at=category.updated_at,
     )
 
 

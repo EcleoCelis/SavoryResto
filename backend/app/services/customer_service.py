@@ -641,7 +641,7 @@ def list_manager_customers(
             Order.customer_id.label("cust_id"),
             func.count(Order.id).filter(Order.status != OrderStatus.CANCELLED.value).label("order_count"),
             func.coalesce(
-                func.sum(Order.total_amount).filter(Order.status != OrderStatus.CANCELLED.value),
+                func.sum(Order.total_amount).filter(Order.status == OrderStatus.COMPLETED.value),
                 0,
             ).label("total_spent"),
             func.max(Order.ordered_at).label("last_order_at"),
@@ -696,7 +696,7 @@ def get_manager_customer_detail(db: Session, customer_id: int) -> ManagerCustome
     total_spent = db.scalar(
         select(func.coalesce(func.sum(Order.total_amount), 0)).where(
             Order.customer_id == customer_id,
-            Order.status != OrderStatus.CANCELLED.value,
+            Order.status == OrderStatus.COMPLETED.value,
         )
     ) or Decimal("0.00")
     last_order_at = orders[0].ordered_at if orders else None
@@ -740,7 +740,9 @@ def update_manager_customer_status(
     request: ManagerCustomerStatusUpdateRequest,
     ip_address: str | None = None,
 ) -> ManagerCustomerDetailResponse | None:
-    customer = db.get(Customer, customer_id)
+    customer = db.scalar(
+        select(Customer).where(Customer.customer_id == customer_id).with_for_update()
+    )
     if customer is None:
         return None
 

@@ -1,7 +1,7 @@
 "use client";
 
-import { useCallback, useEffect, useState, type FormEvent } from "react";
-import { useRouter } from "next/navigation";
+import { Suspense, useCallback, useEffect, useState, type FormEvent } from "react";
+import { useRouter, useSearchParams } from "next/navigation";
 
 import { RefreshIcon } from "../../../components/ui/Icons";
 import {
@@ -90,18 +90,41 @@ type ConfirmActionState =
       orderNumber: string;
       status: OrderStatusCode;
       totalAmount: number;
+      expectedUpdatedAt: string;
     }
   | null;
 
-export default function ManagerOrdersPage() {
+function formatSettlementLabel(status: OrderStatusCode): string {
+  if (status === "completed") return "Settled";
+  if (status === "cancelled") return "Voided";
+  return "Pending settlement";
+}
+
+const VALID_ORDER_STATUS_FILTERS = new Set<ManagerOrderStatusFilter>([
+  "all",
+  "pending",
+  "confirmed",
+  "preparing",
+  "ready",
+  "completed",
+  "cancelled",
+]);
+
+function ManagerOrdersWorkspace() {
   const router = useRouter();
+  const searchParams = useSearchParams();
+  const initialSearch = (searchParams.get("search") || "").trim();
+  const rawStatusParam = (searchParams.get("status") || "").trim().toLowerCase() as ManagerOrderStatusFilter;
+  const initialStatus: ManagerOrderStatusFilter = VALID_ORDER_STATUS_FILTERS.has(rawStatusParam)
+    ? rawStatusParam
+    : "all";
   const [directory, setDirectory] = useState<ManagerOrderListResponse | null>(null);
   const [selectedId, setSelectedId] = useState<number | null>(null);
   const [detail, setDetail] = useState<ManagerOrderDetail | null>(null);
 
-  const [searchInput, setSearchInput] = useState("");
-  const [activeSearch, setActiveSearch] = useState("");
-  const [statusFilter, setStatusFilter] = useState<ManagerOrderStatusFilter>("all");
+  const [searchInput, setSearchInput] = useState(initialSearch);
+  const [activeSearch, setActiveSearch] = useState(initialSearch);
+  const [statusFilter, setStatusFilter] = useState<ManagerOrderStatusFilter>(initialStatus);
   const [fulfillmentFilter, setFulfillmentFilter] = useState<ManagerFulfillmentFilter>("all");
   const [dateFrom, setDateFrom] = useState("");
   const [dateTo, setDateTo] = useState("");
@@ -233,7 +256,38 @@ export default function ManagerOrdersPage() {
     setDateTo("");
     setPage(1);
     setFeedback(null);
+    if (searchParams.toString()) {
+      router.replace("/manager/orders", { scroll: false });
+    }
   }
+
+  // Visibility-aware near-real-time synchronization (30s) when idle & visible
+  useEffect(() => {
+    const intervalId = window.setInterval(() => {
+      if (
+        document.visibilityState === "visible" &&
+        !mutating &&
+        confirmAction === null &&
+        !(dateFrom && dateTo && dateFrom > dateTo)
+      ) {
+        setRefreshNonce((prev) => prev + 1);
+      }
+    }, 30000);
+    return () => window.clearInterval(intervalId);
+  }, [confirmAction, dateFrom, dateTo, mutating]);
+
+  // Escape key closes confirmation modal cleanly when not submitting
+  useEffect(() => {
+    if (!confirmAction) return;
+    function handleKeyDown(event: KeyboardEvent) {
+      if (event.key === "Escape" && !mutating) {
+        setConfirmAction(null);
+        setCancellationReason("");
+      }
+    }
+    document.addEventListener("keydown", handleKeyDown);
+    return () => document.removeEventListener("keydown", handleKeyDown);
+  }, [confirmAction, mutating]);
 
   function handleManualRefresh() {
     setRefreshing(true);
@@ -263,7 +317,8 @@ export default function ManagerOrdersPage() {
       await updateManagerOrderStatus(
         confirmAction.orderId,
         confirmAction.type,
-        confirmAction.type === "cancelled" ? cancellationReason : undefined
+        confirmAction.type === "cancelled" ? cancellationReason : undefined,
+        confirmAction.expectedUpdatedAt
       );
       const updatedNumber = confirmAction.orderNumber;
       const targetType = confirmAction.type;
@@ -278,6 +333,11 @@ export default function ManagerOrdersPage() {
             : `Order ${updatedNumber} has been Cancelled.`,
       });
     } catch (err) {
+      if (err instanceof StaffApiError && err.status === 409) {
+        setConfirmAction(null);
+        setCancellationReason("");
+        setRefreshNonce((prev) => prev + 1);
+      }
       setFeedback({
         type: "error",
         text: err instanceof Error ? err.message : "Failed to update order status.",
@@ -337,7 +397,9 @@ export default function ManagerOrdersPage() {
               aria-selected={isActive}
               className={`${styles.statusTab} ${isActive ? styles.statusTabActive : ""}`}
               onClick={() => {
-                setLoadingList(true);
+                if (!(dateFrom && dateTo && dateFrom > dateTo)) {
+                  setLoadingList(true);
+                }
                 setPage(1);
                 setStatusFilter(tab.key);
               }}
@@ -560,10 +622,10 @@ export default function ManagerOrdersPage() {
                   )}
                 </div>
                 <div className={styles.metaTile}>
-                  <span className={styles.metaLabel}>Destination</span>
+                  <span className={styles.metaLabel}>Destination &amp; Payment</span>
                   <span className={styles.metaValue}>{activeDetail.fulfillment_destination}</span>
                   <span className={styles.secondaryCell}>
-                    Payment: {activeDetail.payment_method_label || "Unrecorded"}
+                    {activeDetail.payment_method_label || "Unrecorded method"} · {formatSettlementLabel(activeDetail.status)}
                   </span>
                 </div>
                 <div className={styles.metaTile}>
@@ -673,6 +735,7 @@ export default function ManagerOrdersPage() {
                         orderNumber: activeDetail.order_number,
                         status: activeDetail.status,
                         totalAmount: activeDetail.total_amount,
+                        expectedUpdatedAt: activeDetail.updated_at,
                       })
                     }
                   >
@@ -692,6 +755,7 @@ export default function ManagerOrdersPage() {
                         orderNumber: activeDetail.order_number,
                         status: activeDetail.status,
                         totalAmount: activeDetail.total_amount,
+                        expectedUpdatedAt: activeDetail.updated_at,
                       });
                     }}
                   >
@@ -785,5 +849,13 @@ export default function ManagerOrdersPage() {
         </div>
       )}
     </div>
+  );
+}
+
+export default function ManagerOrdersPage() {
+  return (
+    <Suspense fallback={<div className={styles.emptyPanel}>Loading restaurant orders...</div>}>
+      <ManagerOrdersWorkspace />
+    </Suspense>
   );
 }

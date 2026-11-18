@@ -1,6 +1,6 @@
 from datetime import datetime
 from typing import Any
-from pydantic import BaseModel, EmailStr, Field
+from pydantic import BaseModel, EmailStr, Field, field_validator
 
 
 class StaffLoginRequest(BaseModel):
@@ -31,13 +31,29 @@ class StaffCreateRequest(BaseModel):
     role: str = Field(pattern=r"^(kitchen_staff|manager)$", description="Assigned role: 'kitchen_staff' or 'manager'")
     password: str = Field(min_length=12, max_length=128)
 
+    @field_validator("name")
+    @classmethod
+    def validate_trimmed_name(cls, value: str) -> str:
+        trimmed = value.strip()
+        if len(trimmed) < 2:
+            raise ValueError("Full name must contain at least 2 non-whitespace characters.")
+        return trimmed
+
 
 class StaffStatusUpdateRequest(BaseModel):
     status: str = Field(pattern=r"^(active|inactive)$", description="Account status: 'active' or 'inactive'")
+    expected_updated_at: datetime | None = Field(
+        default=None,
+        description="Optional optimistic concurrency timestamp from last read",
+    )
 
 
 class StaffRoleUpdateRequest(BaseModel):
     role: str = Field(pattern=r"^(kitchen_staff|manager)$", description="Role to assign: 'kitchen_staff' or 'manager'")
+    expected_updated_at: datetime | None = Field(
+        default=None,
+        description="Optional optimistic concurrency timestamp from last read",
+    )
 
 
 class StaffDetailResponse(BaseModel):

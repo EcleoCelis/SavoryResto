@@ -27,7 +27,13 @@ type FetchState = {
   error: string | null;
 };
 
-export default function OperationalAlertStrip() {
+type OperationalAlertStripProps = {
+  refreshNonce?: number;
+};
+
+export default function OperationalAlertStrip({
+  refreshNonce = 0,
+}: OperationalAlertStripProps) {
   const requestSeqRef = useRef(0);
   const abortRef = useRef<AbortController | null>(null);
   const [retryNonce, setRetryNonce] = useState(0);
@@ -59,7 +65,7 @@ export default function OperationalAlertStrip() {
       });
 
     return () => controller.abort();
-  }, [retryNonce]);
+  }, [retryNonce, refreshNonce]);
 
   const loading = !fetchState.settled;
   const error = fetchState.error;
@@ -118,7 +124,7 @@ export default function OperationalAlertStrip() {
         ) : (
           <>
             {validAlerts.ready_orders_count > 0 && (
-              <Link href="/manager/orders" className={`${styles.alertLink} ${styles.alertReady}`}>
+              <Link href="/manager/orders?status=ready" className={`${styles.alertLink} ${styles.alertReady}`}>
                 <span className={styles.dot} aria-hidden="true" />
                 <span>
                   {validAlerts.ready_orders_count}{" "}
@@ -130,7 +136,7 @@ export default function OperationalAlertStrip() {
             )}
 
             {validAlerts.pending_orders_count > 0 && (
-              <Link href="/manager/orders" className={`${styles.alertLink} ${styles.alertPending}`}>
+              <Link href="/manager/orders?status=pending" className={`${styles.alertLink} ${styles.alertPending}`}>
                 <span className={styles.dot} aria-hidden="true" />
                 <span>
                   {validAlerts.pending_orders_count}{" "}

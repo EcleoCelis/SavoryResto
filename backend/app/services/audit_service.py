@@ -77,6 +77,10 @@ def record_audit_event(
     return entry
 
 
+def _escape_like(value: str) -> str:
+    return value.replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_")
+
+
 def list_audit_logs(
     db: Session,
     limit: int = 50,
@@ -92,13 +96,13 @@ def list_audit_logs(
     if outcome and outcome.strip():
         query = query.where(AuditLog.outcome == outcome.strip())
     if search and search.strip():
-        pattern = f"%{search.strip()}%"
+        pattern = f"%{_escape_like(search.strip())}%"
         query = query.where(
             or_(
-                AuditLog.event_type.ilike(pattern),
-                AuditLog.actor_email.ilike(pattern),
-                AuditLog.target_type.ilike(pattern),
-                AuditLog.target_id.ilike(pattern),
+                AuditLog.event_type.ilike(pattern, escape="\\"),
+                AuditLog.actor_email.ilike(pattern, escape="\\"),
+                AuditLog.target_type.ilike(pattern, escape="\\"),
+                AuditLog.target_id.ilike(pattern, escape="\\"),
             )
         )
     query = (

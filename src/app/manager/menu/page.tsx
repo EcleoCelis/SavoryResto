@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useId, useRef, useState } from "react";
+import { useCallback, useEffect, useId, useMemo, useRef, useState } from "react";
 import {
   createCategory,
   createProduct,
@@ -207,11 +207,25 @@ export default function ManagerMenuPage() {
   const [catName, setCatName] = useState("");
   const [catOrder, setCatOrder] = useState("0");
   const [catDesc, setCatDesc] = useState("");
+  const [catIsActive, setCatIsActive] = useState(true);
   const [catFormError, setCatFormError] = useState("");
 
   // Delete Confirmation Modal
   const [deleteModalOpen, setDeleteModalOpen] = useState(false);
   const [itemToDelete, setItemToDelete] = useState<{ type: "product" | "category"; id: number; name: string } | null>(null);
+
+  // Escape handler for Category and Delete modals
+  useEffect(() => {
+    if (!categoryModalOpen && !deleteModalOpen) return;
+    function handleModalEscape(e: KeyboardEvent) {
+      if (e.key === "Escape" && !actionLoading) {
+        if (deleteModalOpen) setDeleteModalOpen(false);
+        else if (categoryModalOpen) setCategoryModalOpen(false);
+      }
+    }
+    document.addEventListener("keydown", handleModalEscape);
+    return () => document.removeEventListener("keydown", handleModalEscape);
+  }, [categoryModalOpen, deleteModalOpen, actionLoading]);
 
   // Load backend catalog data
   async function loadData(showLoading = false) {
@@ -373,6 +387,7 @@ export default function ManagerMenuPage() {
             description: dishDescription.trim() || null,
             image_url: finalImageUrl,
             is_available: dishIsAvailable,
+            expected_updated_at: editingProduct.updated_at ?? undefined,
           });
           setProducts((prev) => prev.map((p) => (p.id === updated.id ? updated : p)));
           setNotification({ type: "success", message: `"${updated.name}" updated successfully.` });
@@ -414,6 +429,7 @@ export default function ManagerMenuPage() {
     setCatName("");
     setCatOrder(String((categories.length + 1) * 10));
     setCatDesc("");
+    setCatIsActive(true);
     setCatFormError("");
     setCategoryModalOpen(true);
   }
@@ -423,6 +439,7 @@ export default function ManagerMenuPage() {
     setCatName(cat.name);
     setCatOrder(String(cat.display_order));
     setCatDesc(cat.description || "");
+    setCatIsActive(cat.is_active);
     setCatFormError("");
     setCategoryModalOpen(true);
   }
@@ -438,8 +455,8 @@ export default function ManagerMenuPage() {
       return;
     }
     const orderNum = parseInt(catOrder, 10);
-    if (!Number.isFinite(orderNum)) {
-      setCatFormError("Display order must be a valid integer.");
+    if (!Number.isFinite(orderNum) || orderNum < 0) {
+      setCatFormError("Display order must be a non-negative integer.");
       return;
     }
 
@@ -450,14 +467,33 @@ export default function ManagerMenuPage() {
           name: trimmed,
           display_order: orderNum,
           description: catDesc.trim() || null,
+          is_active: catIsActive,
+          expected_updated_at: editingCategory.updated_at ?? undefined,
         });
         setCategories((prev) => prev.map((c) => (c.id === updated.id ? updated : c)));
+        // Keep embedded product category metadata synchronized
+        setProducts((prev) =>
+          prev.map((p) =>
+            p.category_id === updated.id
+              ? {
+                  ...p,
+                  category: {
+                    id: updated.id,
+                    name: updated.name,
+                    description: updated.description,
+                    display_order: updated.display_order,
+                  },
+                }
+              : p
+          )
+        );
         setNotification({ type: "success", message: `Category "${updated.name}" updated.` });
       } else {
         const created = await createCategory({
           name: trimmed,
           display_order: orderNum,
           description: catDesc.trim() || null,
+          is_active: catIsActive,
         });
         setCategories((prev) => [...prev, created]);
         setNotification({ type: "success", message: `Category "${created.name}" created.` });
@@ -495,8 +531,12 @@ export default function ManagerMenuPage() {
         setCategories(updatedCats);
       } else {
         const res = await deleteCategory(itemToDelete.id);
-        setCategories((prev) => prev.filter((c) => c.id !== itemToDelete.id));
-        if (selectedCategory === String(itemToDelete.id)) {
+        const refreshedCats = await getManagerCategories();
+        setCategories(refreshedCats);
+        if (
+          selectedCategory === String(itemToDelete.id) &&
+          !refreshedCats.some((c) => c.id === itemToDelete.id)
+        ) {
           setSelectedCategory("all");
         }
         setNotification({ type: "success", message: res.message || `Category "${itemToDelete.name}" removed.` });
@@ -515,37 +555,46 @@ export default function ManagerMenuPage() {
   }
 
   // Filter and Sort Pipeline
-  const filteredProducts = products
-    .filter((prod) => {
-      // Category filter
-      if (selectedCategory !== "all" && prod.category_id !== Number(selectedCategory)) {
-        return false;
-      }
-      // Availability filter
-      if (availabilityFilter === "available" && !prod.is_available) return false;
-      if (availabilityFilter === "unavailable" && prod.is_available) return false;
-      // Search
-      if (search.trim()) {
-        const term = search.trim().toLowerCase();
-        const matchName = prod.name.toLowerCase().includes(term);
-        const matchDesc = prod.description?.toLowerCase().includes(term) ?? false;
-        const matchCat = prod.category?.name.toLowerCase().includes(term) ?? false;
-        if (!matchName && !matchDesc && !matchCat) return false;
-      }
-      return true;
-    })
-    .sort((a, b) => {
-      if (sortBy === "name-asc") return a.name.localeCompare(b.name);
-      if (sortBy === "price-asc") return a.price - b.price;
-      if (sortBy === "price-desc") return b.price - a.price;
-      return 0;
-    });
+  const filteredProducts = useMemo(
+    () =>
+      products
+        .filter((prod) => {
+          // Category filter
+          if (selectedCategory !== "all" && prod.category_id !== Number(selectedCategory)) {
+            return false;
+          }
+          // Availability filter
+          if (availabilityFilter === "available" && !prod.is_available) return false;
+          if (availabilityFilter === "unavailable" && prod.is_available) return false;
+          // Search
+          if (search.trim()) {
+            const term = search.trim().toLowerCase();
+            const matchName = prod.name.toLowerCase().includes(term);
+            const matchDesc = prod.description?.toLowerCase().includes(term) ?? false;
+            const matchCat = prod.category?.name.toLowerCase().includes(term) ?? false;
+            if (!matchName && !matchDesc && !matchCat) return false;
+          }
+          return true;
+        })
+        .sort((a, b) => {
+          if (sortBy === "name-asc") return a.name.localeCompare(b.name);
+          if (sortBy === "price-asc") return a.price - b.price;
+          if (sortBy === "price-desc") return b.price - a.price;
+          return 0;
+        }),
+    [products, selectedCategory, availabilityFilter, search, sortBy]
+  );
+
+  const categoryActiveMap = useMemo(
+    () => new Map(categories.map((c) => [c.id, c.is_active])),
+    [categories]
+  );
 
   // Overview Counts
   const totalDishes = products.length;
   const availableDishes = products.filter((p) => p.is_available).length;
   const unavailableDishes = totalDishes - availableDishes;
-  const totalCategories = categories.length;
+  const activeCategoriesCount = categories.filter((c) => c.is_active).length;
 
   const currentCategoryObj =
     selectedCategory === "all" ? null : categories.find((c) => c.id === Number(selectedCategory));
@@ -628,7 +677,7 @@ export default function ManagerMenuPage() {
         </article>
         <article className={styles.metricCard}>
           <span className={styles.metricLabel}>Active Categories</span>
-          <span className={styles.metricValue}>{totalCategories}</span>
+          <span className={styles.metricValue}>{activeCategoriesCount}</span>
         </article>
       </section>
 
@@ -673,6 +722,11 @@ export default function ManagerMenuPage() {
                       <span className={styles.categoryName} title={cat.name}>
                         {cat.name}
                       </span>
+                      {!cat.is_active && (
+                        <span className={styles.categoryInactiveBadge} title="Hidden from customer menu">
+                          Hidden
+                        </span>
+                      )}
                       <span className={styles.categoryCount}>{cat.product_count}</span>
                     </button>
                     <div className={styles.categoryActions}>
@@ -846,8 +900,15 @@ export default function ManagerMenuPage() {
                     <div className={styles.dishInfo}>
                       <div className={styles.dishHeaderRow}>
                         <h3 className={styles.dishName}>{prod.name}</h3>
-                        <span className={styles.dishCategoryBadge}>
+                        <span
+                          className={`${styles.dishCategoryBadge} ${
+                            categoryActiveMap.get(prod.category_id) === false
+                              ? styles.dishCategoryBadgeInactive
+                              : ""
+                          }`}
+                        >
                           {prod.category?.name || "Uncategorized"}
+                          {categoryActiveMap.get(prod.category_id) === false ? " (Hidden)" : ""}
                         </span>
                       </div>
                       {prod.description && (
@@ -1007,7 +1068,7 @@ export default function ManagerMenuPage() {
                         className={styles.imagePreviewImg}
                         onError={(e) => {
                           (e.target as HTMLImageElement).src =
-                            "/images/delicious-crispy-chicken-nuggets-with-garlic-dip-wooden-table.jpg";
+                            "data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='320' height='180' viewBox='0 0 24 24' fill='none' stroke='%238d9b93' stroke-width='1.5'%3E%3Cpath d='M18 2v6a3 3 0 0 1-3 3 3 3 0 0 1-3-3V2'/%3E%3Cpath d='M15 11v11'/%3E%3Cpath d='M5 2v4a3 3 0 0 0 3 3v13'/%3E%3C/svg%3E";
                         }}
                       />
                       <div className={styles.imagePreviewOverlay}>
@@ -1100,6 +1161,7 @@ export default function ManagerMenuPage() {
                       {categories.map((c) => (
                         <option key={c.id} value={c.id}>
                           {c.name}
+                          {!c.is_active ? " (Hidden from customers)" : ""}
                         </option>
                       ))}
                     </select>
@@ -1179,6 +1241,44 @@ export default function ManagerMenuPage() {
                     onChange={(e) => setDishIsAvailable(e.target.checked)}
                   />
                 </div>
+
+                {editingProduct &&
+                  (editingProduct.sizes.length > 0 ||
+                    editingProduct.addons.length > 0 ||
+                    (editingProduct.ingredient_names && editingProduct.ingredient_names.length > 0)) && (
+                    <div className={styles.readonlyMetaBox} aria-label="Configured dish options and ingredients">
+                      {editingProduct.sizes.length > 0 && (
+                        <div className={styles.readonlyMetaRow}>
+                          <span className={styles.readonlyMetaLabel}>Sizes:</span>
+                          <span>
+                            {editingProduct.sizes
+                              .map((s) =>
+                                s.price_adjustment > 0
+                                  ? `${s.label} (+₱${s.price_adjustment.toFixed(2)})`
+                                  : s.label
+                              )
+                              .join(", ")}
+                          </span>
+                        </div>
+                      )}
+                      {editingProduct.addons.length > 0 && (
+                        <div className={styles.readonlyMetaRow}>
+                          <span className={styles.readonlyMetaLabel}>Add-ons:</span>
+                          <span>
+                            {editingProduct.addons
+                              .map((a) => `${a.label} (+₱${a.price_adjustment.toFixed(2)})`)
+                              .join(", ")}
+                          </span>
+                        </div>
+                      )}
+                      {editingProduct.ingredient_names && editingProduct.ingredient_names.length > 0 && (
+                        <div className={styles.readonlyMetaRow}>
+                          <span className={styles.readonlyMetaLabel}>Recipe Ingredients:</span>
+                          <span>{editingProduct.ingredient_names.join(", ")}</span>
+                        </div>
+                      )}
+                    </div>
+                  )}
               </div>
 
               <div className={styles.modalFooter}>
@@ -1252,6 +1352,7 @@ export default function ManagerMenuPage() {
                   <input
                     id={catOrderInputId}
                     type="number"
+                    min={0}
                     className={styles.formInput}
                     value={catOrder}
                     onChange={(e) => setCatOrder(e.target.value)}
@@ -1270,6 +1371,22 @@ export default function ManagerMenuPage() {
                     onChange={(e) => setCatDesc(e.target.value)}
                     placeholder="Category details..."
                     rows={2}
+                  />
+                </div>
+
+                <div className={styles.availabilityToggleRow}>
+                  <label htmlFor="modal-category-active" className={styles.availabilityToggleLabel}>
+                    <span className={styles.availabilityToggleTitle}>Customer Menu Visibility</span>
+                    <span className={styles.availabilityToggleDesc}>
+                      Inactive categories hide their dishes from customer browsing and ordering without deleting records.
+                    </span>
+                  </label>
+                  <input
+                    id="modal-category-active"
+                    type="checkbox"
+                    className={styles.checkboxCustom}
+                    checked={catIsActive}
+                    onChange={(e) => setCatIsActive(e.target.checked)}
                   />
                 </div>
               </div>

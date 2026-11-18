@@ -569,3 +569,21 @@ class CustomerProfileIntegrationTests(TestCase):
         self.assertEqual(react_status, 200)
         self.assertTrue(react_detail["customer"]["is_active"])
         self.assertGreaterEqual(react_detail["customer"]["order_count"], 1)
+        # Unsettled/pending order must not count as completed spend
+        self.assertEqual(Decimal(str(react_detail["customer"]["total_spent"])), Decimal("0.00"))
+
+        # Literal '%' search must not match unrelated customers, and blank deactivation reason is rejected 422
+        wild_status, wild_dir, _ = self._request(
+            "/api/v1/manager/customers?search=%25",
+            headers={"Authorization": f"Bearer {self.mgr_token}"},
+        )
+        self.assertEqual(wild_status, 200)
+        self.assertEqual(wild_dir["total"], 0)
+
+        short_reason_st, _, _ = self._request(
+            f"/api/v1/manager/customers/{self.c1_id}/status",
+            method="PATCH",
+            body={"is_active": False, "reason": "no"},
+            headers={"Authorization": f"Bearer {self.mgr_token}"},
+        )
+        self.assertEqual(short_reason_st, 422)

@@ -339,6 +339,94 @@ class RevenueAnalyticsServiceTests(TestCase):
         self.assertEqual(alerts.low_stock_count, 1)
         self.assertEqual(alerts.low_stock_names, ["Chicken Thigh", "Cooking Oil"])
 
+    def test_zero_order_empty_state_across_all_endpoints_safe(self):
+        ref_now = datetime(2026, 11, 16, 12, 0, tzinfo=timezone.utc)
+        for period, expected_len in (("last_7_days", 7), ("last_30_days", 30), ("last_12_months", 12)):
+            trend = get_revenue_trend(self.db, period, now=ref_now)
+            self.assertEqual(trend.total_revenue, Decimal("0.00"))
+            self.assertEqual(trend.total_orders, 0)
+            self.assertEqual(len(trend.data), expected_len)
+
+            dist = get_order_distribution(self.db, period, now=ref_now)
+            self.assertEqual(dist.total_orders, 0)
+            self.assertTrue(all(item.count == 0 for item in dist.distribution))
+
+            dishes = get_top_selling_dishes(self.db, period, now=ref_now)
+            self.assertEqual(dishes.items, [])
+
+            volume = get_order_volume(self.db, period, now=ref_now)
+            self.assertEqual(volume.total_orders, 0)
+            self.assertEqual(len(volume.data), expected_len)
+
+            kpi = get_kpi_summary(self.db, period, now=ref_now)
+            self.assertEqual(kpi.total_revenue, Decimal("0.00"))
+            self.assertEqual(kpi.total_orders, 0)
+            self.assertEqual(kpi.completed_orders, 0)
+            self.assertEqual(kpi.placed_completed_orders, 0)
+            self.assertEqual(kpi.completion_rate, Decimal("0.0"))
+            self.assertEqual(kpi.average_order_value, Decimal("0.00"))
+
+        alerts = get_operational_alerts(self.db)
+        self.assertEqual(alerts.ready_orders_count, 0)
+        self.assertEqual(alerts.pending_orders_count, 0)
+        self.assertEqual(alerts.low_stock_count, 0)
+        self.assertEqual(alerts.out_of_stock_count, 0)
+        self.assertEqual(alerts.low_stock_names, [])
+
+    def test_cross_endpoint_reconciliation_and_cancelled_item_exclusion(self):
+        ref_now = datetime(2026, 11, 16, 10, 0, tzinfo=timezone.utc)  # 18:00 Manila
+        cat = MenuCategory(id=1, name="Mains", display_order=1, is_active=True, created_at=ref_now, updated_at=ref_now)
+        dish_a = MenuProduct(id=101, category_id=1, name="Grilled Bangus", price=Decimal("220.00"), is_available=True, created_at=ref_now, updated_at=ref_now)
+        dish_b = MenuProduct(id=102, category_id=1, name="Beef Tapa", price=Decimal("180.00"), is_available=True, created_at=ref_now, updated_at=ref_now)
+        self.db.add_all([cat, dish_a, dish_b])
+        self.db.flush()
+
+        # Order placed 20 days ago, completed today -> included in completed revenue 7d/30d, NOT in placed_7d cohort!
+        o_cross = self._add_order(
+            status="completed",
+            total_amount="440.00",
+            ordered_at=ref_now - timedelta(days=20),
+            completed_at=ref_now - timedelta(hours=1),
+        )
+        # Order placed & completed 2 days ago with 1 cancelled line item that must be excluded
+        o_recent = self._add_order(
+            status="completed",
+            total_amount="180.00",
+            ordered_at=ref_now - timedelta(days=2),
+            completed_at=ref_now - timedelta(days=2),
+        )
+        o_cancel = self._add_order(
+            status="cancelled",
+            total_amount="360.00",
+            ordered_at=ref_now - timedelta(days=1),
+        )
+        self.db.add_all([
+            OrderItem(id=1, order_id=o_cross.id, menu_item_id=101, quantity=2, unit_price=Decimal("220.00"), discount_amount=Decimal("0.00"), line_total=Decimal("440.00"), status="completed", product_name="Grilled Bangus", created_at=ref_now, updated_at=ref_now),
+            OrderItem(id=2, order_id=o_recent.id, menu_item_id=102, quantity=1, unit_price=Decimal("180.00"), discount_amount=Decimal("0.00"), line_total=Decimal("180.00"), status="completed", product_name="Beef Tapa", created_at=ref_now, updated_at=ref_now),
+            OrderItem(id=3, order_id=o_recent.id, menu_item_id=101, quantity=5, unit_price=Decimal("220.00"), discount_amount=Decimal("0.00"), line_total=Decimal("1100.00"), status="cancelled", product_name="Grilled Bangus", created_at=ref_now, updated_at=ref_now),
+            OrderItem(id=4, order_id=o_cancel.id, menu_item_id=102, quantity=2, unit_price=Decimal("180.00"), discount_amount=Decimal("0.00"), line_total=Decimal("360.00"), status="cancelled", product_name="Beef Tapa", created_at=ref_now, updated_at=ref_now),
+        ])
+        self.db.commit()
+
+        for period in ("last_7_days", "last_30_days", "last_12_months"):
+            trend = get_revenue_trend(self.db, period, now=ref_now)
+            dist = get_order_distribution(self.db, period, now=ref_now)
+            volume = get_order_volume(self.db, period, now=ref_now)
+            kpi = get_kpi_summary(self.db, period, now=ref_now)
+
+            self.assertEqual(kpi.total_revenue, trend.total_revenue)
+            self.assertEqual(kpi.total_revenue, sum((p.revenue for p in trend.data), Decimal("0.00")))
+            self.assertEqual(kpi.completed_orders, trend.total_orders)
+            self.assertEqual(kpi.completed_orders, sum(p.order_count for p in trend.data))
+            self.assertEqual(kpi.total_orders, dist.total_orders)
+            self.assertEqual(kpi.total_orders, volume.total_orders)
+            self.assertEqual(kpi.total_orders, sum(p.orders for p in volume.data))
+            dist_completed = next(d.count for d in dist.distribution if d.status == "completed")
+            self.assertEqual(kpi.placed_completed_orders, dist_completed)
+
+        dishes_7d = get_top_selling_dishes(self.db, "last_7_days", now=ref_now)
+        self.assertEqual([(i.name, i.units_sold) for i in dishes_7d.items], [("Grilled Bangus", 2), ("Beef Tapa", 1)])
+
 
 class RevenueAnalyticsApiTests(TestCase):
     @classmethod

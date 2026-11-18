@@ -225,6 +225,24 @@ export default function ManagerUserPage() {
     router,
   ]);
 
+  // Escape key dismisses active confirmation/provisioning dialog when idle
+  useEffect(() => {
+    if (!createModalOpen && !confirmMutation) {
+      return;
+    }
+    function handleKeyDown(event: KeyboardEvent) {
+      if (event.key !== "Escape") return;
+      if (confirmMutation && !mutating) {
+        setConfirmMutation(null);
+      } else if (createModalOpen && !creating) {
+        setCreatePassword("");
+        setCreateModalOpen(false);
+      }
+    }
+    document.addEventListener("keydown", handleKeyDown);
+    return () => document.removeEventListener("keydown", handleKeyDown);
+  }, [confirmMutation, createModalOpen, creating, mutating]);
+
   const filteredStaff = staffList
     .filter((member) => {
       if (staffRoleFilter !== "all" && member.role !== staffRoleFilter) return false;
@@ -256,6 +274,33 @@ export default function ManagerUserPage() {
 
   const passwordChecks = getPasswordChecks(createPassword);
   const allPasswordChecksMet = Object.values(passwordChecks).every(Boolean);
+
+  const hasStaffFilters =
+    staffSearchInput.trim().length > 0 ||
+    staffRoleFilter !== "all" ||
+    staffStatusFilter !== "all";
+
+  const hasAuditFilters =
+    auditSearchInput.trim().length > 0 ||
+    activeAuditSearch.length > 0 ||
+    auditEventFilter !== "" ||
+    auditOutcomeFilter !== "all";
+
+  function handleClearStaffFilters() {
+    setStaffSearchInput("");
+    setStaffRoleFilter("all");
+    setStaffStatusFilter("all");
+    setStaffPage(1);
+  }
+
+  function handleClearAuditFilters() {
+    setLoadingAudit(true);
+    setAuditSearchInput("");
+    setActiveAuditSearch("");
+    setAuditEventFilter("");
+    setAuditOutcomeFilter("all");
+    setAuditOffset(0);
+  }
 
   function handleRefresh() {
     setRefreshing(true);
@@ -324,7 +369,8 @@ export default function ManagerUserPage() {
       if (confirmMutation.kind === "status") {
         const updated = await updateManagerStaffStatus(
           confirmMutation.staff.id,
-          confirmMutation.nextStatus
+          confirmMutation.nextStatus,
+          confirmMutation.staff.updated_at
         );
         setFeedback({
           type: "success",
@@ -336,7 +382,8 @@ export default function ManagerUserPage() {
       } else {
         const updated = await updateManagerStaffRole(
           confirmMutation.staff.id,
-          confirmMutation.nextRole
+          confirmMutation.nextRole,
+          confirmMutation.staff.updated_at
         );
         setFeedback({
           type: "success",
@@ -347,6 +394,7 @@ export default function ManagerUserPage() {
       setRefreshNonce((prev) => prev + 1);
     } catch (err) {
       setConfirmMutation(null);
+      setRefreshNonce((prev) => prev + 1);
       setFeedback({
         type: "error",
         text: err instanceof Error ? err.message : "Unable to update staff account.",
@@ -525,6 +573,16 @@ export default function ManagerUserPage() {
                 <option value="inactive">Inactive</option>
               </select>
             </div>
+
+            {hasStaffFilters && (
+              <button
+                type="button"
+                className={styles.clearBtn}
+                onClick={handleClearStaffFilters}
+              >
+                Clear Filters
+              </button>
+            )}
           </div>
 
           <section className={styles.tableCard} aria-label="Staff accounts table">
@@ -720,7 +778,13 @@ export default function ManagerUserPage() {
                 <option value="staff.role_change">Staff Role Changed</option>
                 <option value="staff.status_change">Staff Status Changed</option>
                 <option value="manager.order.status_change">Order Status Updated</option>
-                <option value="manager.customer.status_change">Customer Status Updated</option>
+                <option value="manager.customer_status_update">Customer Status Updated</option>
+                <option value="manager.table.create">Table Created</option>
+                <option value="manager.table.update">Table Updated</option>
+                <option value="manager.payment_method.create">Payment Method Created</option>
+                <option value="manager.payment_method.update">Payment Method Updated</option>
+                <option value="manager.initial_provisioning">Initial Manager Provisioned</option>
+                <option value="manager.recovery">Emergency Manager Recovery</option>
               </select>
             </div>
 
@@ -766,6 +830,16 @@ export default function ManagerUserPage() {
                 <option value={100}>100</option>
               </select>
             </div>
+
+            {hasAuditFilters && (
+              <button
+                type="button"
+                className={styles.clearBtn}
+                onClick={handleClearAuditFilters}
+              >
+                Clear Filters
+              </button>
+            )}
           </div>
 
           <section className={styles.tableCard} aria-label="Audit logs table">
@@ -1070,7 +1144,10 @@ export default function ManagerUserPage() {
                 type="button"
                 disabled={mutating}
                 className={`${styles.modalConfirmBtn} ${
-                  confirmMutation.kind === "status" && confirmMutation.nextStatus === "inactive"
+                  (confirmMutation.kind === "status" && confirmMutation.nextStatus === "inactive") ||
+                  (confirmMutation.kind === "role" &&
+                    confirmMutation.nextRole !== "manager" &&
+                    currentStaff?.id === confirmMutation.staff.id)
                     ? styles.modalConfirmDanger
                     : ""
                 }`}

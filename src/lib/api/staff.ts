@@ -1,19 +1,38 @@
 import type {
   AuditLogEntry,
+  BusinessHourEntry,
   KdsOrder,
   KpiSummaryResponse,
   ManagerCustomerDetail,
   ManagerCustomerListResponse,
   ManagerFulfillmentFilter,
+  ManagerInventoryReportResponse,
+  ManagerMenuReportResponse,
   ManagerOrderDetail,
   ManagerOrderListResponse,
   ManagerOrderStatusFilter,
+  ManagerOrdersReportResponse,
+  ManagerPaymentMethodSummary,
+  ManagerPaymentsLedgerResponse,
+  ManagerPaymentsReportResponse,
+  ManagerReportOverviewResponse,
+  ManagerSalesReportResponse,
+  ManagerSettingsResponse,
+  ManagerTablesOverview,
+  ManagerTableSummary,
+  MenuReportSortBy,
   OperationalAlertsResponse,
   OrderDistributionResponse,
   OrderVolumeResponse,
+  PaymentSettlementState,
+  PublicRestaurantSettingsResponse,
+  ReportDatePreset,
+  ReportExportType,
+  ReportGranularity,
   RevenuePeriod,
   RevenueTrendResponse,
   SecurityOverview,
+  SortDirection,
   StaffAccountDetail,
   StaffAccountStatus,
   StaffCreatePayload,
@@ -158,7 +177,8 @@ export function updateKdsStatus(
 export function updateManagerOrderStatus(
   orderId: number,
   status: "completed" | "cancelled",
-  cancellationReason?: string
+  cancellationReason?: string,
+  expectedUpdatedAt?: string | null
 ): Promise<KdsOrder> {
   return request<KdsOrder>(`/api/v1/manager/orders/${orderId}/status`, {
     method: "PATCH",
@@ -166,22 +186,27 @@ export function updateManagerOrderStatus(
     body: JSON.stringify({
       status,
       cancellation_reason: cancellationReason?.trim() || undefined,
+      expected_updated_at: expectedUpdatedAt || undefined,
     }),
   });
 }
 
-export function getManagerCustomers(params?: {
-  search?: string;
-  status?: "all" | "active" | "deactivated";
-  page?: number;
-}): Promise<ManagerCustomerListResponse> {
+export function getManagerCustomers(
+  params?: {
+    search?: string;
+    status?: "all" | "active" | "deactivated";
+    page?: number;
+  },
+  signal?: AbortSignal
+): Promise<ManagerCustomerListResponse> {
   const sp = new URLSearchParams();
   if (params?.search?.trim()) sp.set("search", params.search.trim());
   if (params?.status) sp.set("status", params.status);
   if (params?.page) sp.set("page", String(params.page));
   const query = sp.toString();
   return request<ManagerCustomerListResponse>(
-    `/api/v1/manager/customers${query ? `?${query}` : ""}`
+    `/api/v1/manager/customers${query ? `?${query}` : ""}`,
+    { signal }
   ).then((res) => ({
     ...res,
     items: (res.items || []).map((c) => ({
@@ -191,8 +216,13 @@ export function getManagerCustomers(params?: {
   }));
 }
 
-export function getManagerCustomerDetail(customerId: number): Promise<ManagerCustomerDetail> {
-  return request<ManagerCustomerDetail>(`/api/v1/manager/customers/${customerId}`).then((res) => ({
+export function getManagerCustomerDetail(
+  customerId: number,
+  signal?: AbortSignal
+): Promise<ManagerCustomerDetail> {
+  return request<ManagerCustomerDetail>(`/api/v1/manager/customers/${customerId}`, {
+    signal,
+  }).then((res) => ({
     ...res,
     customer: {
       ...res.customer,
@@ -440,23 +470,31 @@ export function createManagerStaffAccount(
 
 export function updateManagerStaffStatus(
   staffId: number,
-  status: StaffAccountStatus
+  status: StaffAccountStatus,
+  expectedUpdatedAt?: string
 ): Promise<StaffAccountDetail> {
   return request<StaffAccountDetail>(`/api/v1/manager/staff/${staffId}/status`, {
     method: "PATCH",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ status }),
+    body: JSON.stringify({
+      status,
+      expected_updated_at: expectedUpdatedAt || undefined,
+    }),
   });
 }
 
 export function updateManagerStaffRole(
   staffId: number,
-  role: StaffRole
+  role: StaffRole,
+  expectedUpdatedAt?: string
 ): Promise<StaffAccountDetail> {
   return request<StaffAccountDetail>(`/api/v1/manager/staff/${staffId}/role`, {
     method: "PATCH",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ role }),
+    body: JSON.stringify({
+      role,
+      expected_updated_at: expectedUpdatedAt || undefined,
+    }),
   });
 }
 
@@ -496,4 +534,563 @@ export function getManagerSecurityOverview(
       rate_limit_lockout_seconds: parseStrictNumber(res.rate_limit_lockout_seconds),
     })
   );
+}
+
+export function getManagerTablesOverview(
+  signal?: AbortSignal
+): Promise<ManagerTablesOverview> {
+  return request<ManagerTablesOverview>("/api/v1/manager/tables", { signal }).then((res) => ({
+    ...res,
+    items: (res.items || []).map((tbl) => ({
+      ...tbl,
+      active_order: tbl.active_order
+        ? {
+            ...tbl.active_order,
+            total_amount: parseStrictNumber(tbl.active_order.total_amount),
+          }
+        : null,
+    })),
+  }));
+}
+
+export function createManagerTable(payload: {
+  table_number: string;
+  seats: number;
+  is_active: boolean;
+}): Promise<ManagerTableSummary> {
+  return request<ManagerTableSummary>("/api/v1/manager/tables", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(payload),
+  });
+}
+
+export function updateManagerTable(
+  tableId: number,
+  payload: {
+    table_number?: string;
+    seats?: number;
+    is_active?: boolean;
+    expected_updated_at?: string;
+  }
+): Promise<ManagerTableSummary> {
+  return request<ManagerTableSummary>(`/api/v1/manager/tables/${tableId}`, {
+    method: "PATCH",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(payload),
+  }).then((tbl) => ({
+    ...tbl,
+    active_order: tbl.active_order
+      ? {
+          ...tbl.active_order,
+          total_amount: parseStrictNumber(tbl.active_order.total_amount),
+        }
+      : null,
+  }));
+}
+
+export function getManagerPaymentsLedger(
+  params?: {
+    search?: string;
+    settlement?: "all" | PaymentSettlementState;
+    method_code?: string;
+    date_from?: string;
+    date_to?: string;
+    page?: number;
+    page_size?: number;
+  },
+  signal?: AbortSignal
+): Promise<ManagerPaymentsLedgerResponse> {
+  const sp = new URLSearchParams();
+  if (params?.search?.trim()) sp.set("search", params.search.trim());
+  if (params?.settlement) sp.set("settlement", params.settlement);
+  if (params?.method_code) sp.set("method_code", params.method_code);
+  if (params?.date_from) sp.set("date_from", params.date_from);
+  if (params?.date_to) sp.set("date_to", params.date_to);
+  if (params?.page) sp.set("page", String(params.page));
+  if (params?.page_size) sp.set("page_size", String(params.page_size));
+  const query = sp.toString();
+  return request<ManagerPaymentsLedgerResponse>(
+    `/api/v1/manager/payments/ledger${query ? `?${query}` : ""}`,
+    { signal }
+  ).then((res) => ({
+    ...res,
+    collected_revenue: parseStrictNumber(res.collected_revenue),
+    pending_revenue: parseStrictNumber(res.pending_revenue),
+    voided_revenue: parseStrictNumber(res.voided_revenue),
+    method_breakdown: (res.method_breakdown || []).map((item) => ({
+      ...item,
+      collected_revenue: parseStrictNumber(item.collected_revenue),
+      pending_revenue: parseStrictNumber(item.pending_revenue),
+    })),
+    items: (res.items || []).map((tx) => ({
+      ...tx,
+      subtotal: parseStrictNumber(tx.subtotal),
+      discount_amount: parseStrictNumber(tx.discount_amount),
+      tax_amount: parseStrictNumber(tx.tax_amount),
+      total_amount: parseStrictNumber(tx.total_amount),
+    })),
+  }));
+}
+
+export function getManagerPaymentMethods(
+  signal?: AbortSignal
+): Promise<ManagerPaymentMethodSummary[]> {
+  return request<ManagerPaymentMethodSummary[]>("/api/v1/manager/payments/methods", {
+    signal,
+  }).then((list) =>
+    (list || []).map((method) => ({
+      ...method,
+      collected_revenue: parseStrictNumber(method.collected_revenue),
+    }))
+  );
+}
+
+export function createManagerPaymentMethod(payload: {
+  code: string;
+  label: string;
+  description?: string | null;
+  is_active: boolean;
+  display_order: number;
+}): Promise<ManagerPaymentMethodSummary> {
+  return request<ManagerPaymentMethodSummary>("/api/v1/manager/payments/methods", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(payload),
+  }).then((method) => ({
+    ...method,
+    collected_revenue: parseStrictNumber(method.collected_revenue),
+  }));
+}
+
+export function updateManagerPaymentMethod(
+  methodId: number,
+  payload: {
+    label?: string;
+    description?: string | null;
+    is_active?: boolean;
+    display_order?: number;
+    expected_updated_at?: string;
+  }
+): Promise<ManagerPaymentMethodSummary> {
+  return request<ManagerPaymentMethodSummary>(`/api/v1/manager/payments/methods/${methodId}`, {
+    method: "PATCH",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(payload),
+  }).then((method) => ({
+    ...method,
+    collected_revenue: parseStrictNumber(method.collected_revenue),
+  }));
+}
+
+type ReportBaseQuery = {
+  preset?: ReportDatePreset;
+  date_from?: string;
+  date_to?: string;
+};
+
+function buildReportSearchParams(
+  base: ReportBaseQuery & Record<string, string | number | undefined>
+): string {
+  const sp = new URLSearchParams();
+  for (const [key, val] of Object.entries(base)) {
+    if (val !== undefined && String(val).trim().length > 0) {
+      sp.set(key, String(val));
+    }
+  }
+  const qs = sp.toString();
+  return qs ? `?${qs}` : "";
+}
+
+function parseOptionalNumber(value: unknown): number | null {
+  if (value === null || value === undefined) return null;
+  const num = parseStrictNumber(value);
+  return Number.isNaN(num) ? null : num;
+}
+
+export function getManagerReportOverview(
+  params?: ReportBaseQuery,
+  signal?: AbortSignal
+): Promise<ManagerReportOverviewResponse> {
+  const qs = buildReportSearchParams({ ...params });
+  return request<ManagerReportOverviewResponse>(`/api/v1/manager/reports/overview${qs}`, {
+    signal,
+  }).then((res) => ({
+    ...res,
+    recognized_revenue: {
+      current: parseStrictNumber(res.recognized_revenue.current),
+      previous: parseStrictNumber(res.recognized_revenue.previous),
+      delta: parseStrictNumber(res.recognized_revenue.delta),
+      change_pct: parseOptionalNumber(res.recognized_revenue.change_pct),
+    },
+    total_placed_orders: {
+      ...res.total_placed_orders,
+      change_pct: parseOptionalNumber(res.total_placed_orders.change_pct),
+    },
+    completed_orders: {
+      ...res.completed_orders,
+      change_pct: parseOptionalNumber(res.completed_orders.change_pct),
+    },
+    average_order_value: {
+      current: parseStrictNumber(res.average_order_value.current),
+      previous: parseStrictNumber(res.average_order_value.previous),
+      delta: parseStrictNumber(res.average_order_value.delta),
+      change_pct: parseOptionalNumber(res.average_order_value.change_pct),
+    },
+    completion_rate: parseStrictNumber(res.completion_rate),
+    trend: (res.trend || []).map((p) => ({
+      ...p,
+      recognized_revenue: parseStrictNumber(p.recognized_revenue),
+    })),
+    top_dishes: (res.top_dishes || []).map((d) => ({
+      ...d,
+      sales_value: parseStrictNumber(d.sales_value),
+    })),
+    payment_mix: (res.payment_mix || []).map((m) => ({
+      ...m,
+      settled_revenue: parseStrictNumber(m.settled_revenue),
+    })),
+  }));
+}
+
+export function getManagerSalesReport(
+  params?: ReportBaseQuery & {
+    granularity?: ReportGranularity;
+    page?: number;
+    page_size?: number;
+  },
+  signal?: AbortSignal
+): Promise<ManagerSalesReportResponse> {
+  const qs = buildReportSearchParams({ ...params });
+  return request<ManagerSalesReportResponse>(`/api/v1/manager/reports/sales${qs}`, {
+    signal,
+  }).then((res) => ({
+    ...res,
+    gross_sales: parseStrictNumber(res.gross_sales),
+    discount_total: parseStrictNumber(res.discount_total),
+    tax_total: parseStrictNumber(res.tax_total),
+    recognized_revenue: parseStrictNumber(res.recognized_revenue),
+    voided_amount: parseStrictNumber(res.voided_amount),
+    average_order_value: parseStrictNumber(res.average_order_value),
+    series: (res.series || []).map((row) => ({
+      ...row,
+      gross_sales: parseStrictNumber(row.gross_sales),
+      discount_total: parseStrictNumber(row.discount_total),
+      tax_total: parseStrictNumber(row.tax_total),
+      recognized_revenue: parseStrictNumber(row.recognized_revenue),
+      average_order_value: parseStrictNumber(row.average_order_value),
+    })),
+    category_breakdown: (res.category_breakdown || []).map((cat) => ({
+      ...cat,
+      sales_value: parseStrictNumber(cat.sales_value),
+      share_pct: parseStrictNumber(cat.share_pct),
+    })),
+    ledger_items: (res.ledger_items || []).map((row) => ({
+      ...row,
+      gross_sales: parseStrictNumber(row.gross_sales),
+      discount_total: parseStrictNumber(row.discount_total),
+      tax_total: parseStrictNumber(row.tax_total),
+      recognized_revenue: parseStrictNumber(row.recognized_revenue),
+      average_order_value: parseStrictNumber(row.average_order_value),
+    })),
+  }));
+}
+
+export function getManagerOrdersReport(
+  params?: ReportBaseQuery & {
+    status?: string;
+    order_type?: string;
+    page?: number;
+    page_size?: number;
+  },
+  signal?: AbortSignal
+): Promise<ManagerOrdersReportResponse> {
+  const qs = buildReportSearchParams({ ...params });
+  return request<ManagerOrdersReportResponse>(`/api/v1/manager/reports/orders${qs}`, {
+    signal,
+  }).then((res) => ({
+    ...res,
+    completion_rate: parseStrictNumber(res.completion_rate),
+    cancellation_rate: parseStrictNumber(res.cancellation_rate),
+    status_breakdown: (res.status_breakdown || []).map((s) => ({
+      ...s,
+      share_pct: parseStrictNumber(s.share_pct),
+    })),
+    type_breakdown: (res.type_breakdown || []).map((t) => ({
+      ...t,
+      share_pct: parseStrictNumber(t.share_pct),
+    })),
+    items: (res.items || []).map((o) => ({
+      ...o,
+      total_amount: parseStrictNumber(o.total_amount),
+    })),
+  }));
+}
+
+export function getManagerMenuReport(
+  params?: ReportBaseQuery & {
+    category_id?: number;
+    search?: string;
+    sort_by?: MenuReportSortBy;
+    sort_dir?: SortDirection;
+    page?: number;
+    page_size?: number;
+  },
+  signal?: AbortSignal
+): Promise<ManagerMenuReportResponse> {
+  const qs = buildReportSearchParams({ ...params });
+  return request<ManagerMenuReportResponse>(`/api/v1/manager/reports/menu${qs}`, {
+    signal,
+  }).then((res) => ({
+    ...res,
+    total_item_sales_value: parseStrictNumber(res.total_item_sales_value),
+    category_summary: (res.category_summary || []).map((c) => ({
+      ...c,
+      sales_value: parseStrictNumber(c.sales_value),
+      share_pct: parseStrictNumber(c.share_pct),
+    })),
+    top_selling_dishes: (res.top_selling_dishes || []).map((d) => ({
+      ...d,
+      sales_value: parseStrictNumber(d.sales_value),
+      share_pct: parseStrictNumber(d.share_pct),
+    })),
+    lowest_selling_active_dishes: (res.lowest_selling_active_dishes || []).map((d) => ({
+      ...d,
+      sales_value: parseStrictNumber(d.sales_value),
+      share_pct: parseStrictNumber(d.share_pct),
+    })),
+    items: (res.items || []).map((d) => ({
+      ...d,
+      sales_value: parseStrictNumber(d.sales_value),
+      share_pct: parseStrictNumber(d.share_pct),
+    })),
+  }));
+}
+
+export function getManagerPaymentsReport(
+  params?: ReportBaseQuery & {
+    settlement?: "all" | PaymentSettlementState;
+    method_code?: string;
+    page?: number;
+    page_size?: number;
+  },
+  signal?: AbortSignal
+): Promise<ManagerPaymentsReportResponse> {
+  const qs = buildReportSearchParams({ ...params });
+  return request<ManagerPaymentsReportResponse>(`/api/v1/manager/reports/payments${qs}`, {
+    signal,
+  }).then((res) => ({
+    ...res,
+    settled_revenue: parseStrictNumber(res.settled_revenue),
+    pending_revenue: parseStrictNumber(res.pending_revenue),
+    voided_revenue: parseStrictNumber(res.voided_revenue),
+    collection_rate_pct: parseStrictNumber(res.collection_rate_pct),
+    method_breakdown: (res.method_breakdown || []).map((m) => ({
+      ...m,
+      settled_revenue: parseStrictNumber(m.settled_revenue),
+      pending_revenue: parseStrictNumber(m.pending_revenue),
+      voided_revenue: parseStrictNumber(m.voided_revenue),
+      share_pct: parseStrictNumber(m.share_pct),
+    })),
+    items: (res.items || []).map((row) => ({
+      ...row,
+      subtotal: parseStrictNumber(row.subtotal),
+      discount_amount: parseStrictNumber(row.discount_amount),
+      tax_amount: parseStrictNumber(row.tax_amount),
+      total_amount: parseStrictNumber(row.total_amount),
+    })),
+  }));
+}
+
+export function getManagerInventoryReport(
+  params?: ReportBaseQuery & {
+    transaction_type?: string;
+    search?: string;
+    page?: number;
+    page_size?: number;
+  },
+  signal?: AbortSignal
+): Promise<ManagerInventoryReportResponse> {
+  const qs = buildReportSearchParams({ ...params });
+  return request<ManagerInventoryReportResponse>(`/api/v1/manager/reports/inventory${qs}`, {
+    signal,
+  }).then((res) => ({
+    ...res,
+    top_consumed_items: (res.top_consumed_items || []).map((item) => ({
+      ...item,
+      consumed_qty: parseStrictNumber(item.consumed_qty),
+      current_stock: parseStrictNumber(item.current_stock),
+    })),
+    item_summaries: (res.item_summaries || []).map((row) => ({
+      ...row,
+      current_stock: parseStrictNumber(row.current_stock),
+      reorder_level: parseStrictNumber(row.reorder_level),
+      consumed_qty: parseStrictNumber(row.consumed_qty),
+      restocked_qty: parseStrictNumber(row.restocked_qty),
+      waste_qty: parseStrictNumber(row.waste_qty),
+      returned_qty: parseStrictNumber(row.returned_qty),
+      adjusted_qty: parseStrictNumber(row.adjusted_qty),
+    })),
+    ledger_items: (res.ledger_items || []).map((tx) => ({
+      ...tx,
+      quantity_change: parseStrictNumber(tx.quantity_change),
+    })),
+  }));
+}
+
+export async function downloadManagerReportCsv(
+  params: ReportBaseQuery & {
+    report: ReportExportType;
+    granularity?: ReportGranularity;
+    status?: string;
+    order_type?: string;
+    category_id?: number;
+    search?: string;
+    sort_by?: MenuReportSortBy;
+    sort_dir?: SortDirection;
+    settlement?: "all" | PaymentSettlementState;
+    method_code?: string;
+    transaction_type?: string;
+  }
+): Promise<string> {
+  const baseUrl = getStaffApiUrl();
+  const token = getStaffToken();
+  const qs = buildReportSearchParams(params);
+
+  const headers = new Headers();
+  if (token) {
+    headers.set("Authorization", `Bearer ${token}`);
+  }
+
+  const response = await fetch(`${baseUrl}/api/v1/manager/reports/export${qs}`, {
+    credentials: "include",
+    headers,
+  });
+
+  if (!response.ok) {
+    const data = await response.json().catch(() => null);
+    const detail =
+      typeof data === "object" && data !== null && "detail" in data
+        ? String((data as { detail: unknown }).detail)
+        : "Report export failed.";
+    throw new StaffApiError(response.status, detail);
+  }
+
+  const blob = await response.blob();
+  const disposition = response.headers.get("Content-Disposition") || "";
+  const match = disposition.match(/filename="?([^"]+)"?/i);
+  const filename = match?.[1] || `savorybites-${params.report}-report.csv`;
+
+  const url = URL.createObjectURL(blob);
+  const anchor = document.createElement("a");
+  anchor.href = url;
+  anchor.download = filename;
+  document.body.appendChild(anchor);
+  anchor.click();
+  anchor.remove();
+  URL.revokeObjectURL(url);
+  return filename;
+}
+
+function normalizeManagerSettings(res: ManagerSettingsResponse): ManagerSettingsResponse {
+  return {
+    ...res,
+    ordering: {
+      ...res.ordering,
+      minimum_order_amount: parseStrictNumber(res.ordering.minimum_order_amount),
+    },
+    payment_methods: (res.payment_methods || []).map((pm) => ({
+      ...pm,
+      collected_revenue: parseStrictNumber(pm.collected_revenue),
+    })),
+  };
+}
+
+export function getPublicRestaurantSettings(
+  signal?: AbortSignal
+): Promise<PublicRestaurantSettingsResponse> {
+  return request<PublicRestaurantSettingsResponse>("/api/v1/restaurant/settings", {
+    signal,
+  }).then((res) => ({
+    ...res,
+    ordering: {
+      ...res.ordering,
+      minimum_order_amount: parseStrictNumber(res.ordering.minimum_order_amount),
+    },
+  }));
+}
+
+export function getManagerSettings(signal?: AbortSignal): Promise<ManagerSettingsResponse> {
+  return request<ManagerSettingsResponse>("/api/v1/manager/settings", { signal }).then(
+    normalizeManagerSettings
+  );
+}
+
+export function updateManagerRestaurantInfo(payload: {
+  name: string;
+  tagline: string;
+  locality: string;
+  full_address: string;
+  phone: string;
+  email: string;
+  kitchen_notice: string;
+  holiday_notice: string;
+  expected_version?: number;
+}): Promise<ManagerSettingsResponse> {
+  return request<ManagerSettingsResponse>("/api/v1/manager/settings/restaurant", {
+    method: "PATCH",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(payload),
+  }).then(normalizeManagerSettings);
+}
+
+export function updateManagerBusinessHours(payload: {
+  hours: Array<Pick<BusinessHourEntry, "day_of_week" | "is_open" | "open_time" | "close_time">>;
+  expected_version?: number;
+}): Promise<ManagerSettingsResponse> {
+  return request<ManagerSettingsResponse>("/api/v1/manager/settings/hours", {
+    method: "PATCH",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(payload),
+  }).then(normalizeManagerSettings);
+}
+
+export function updateManagerOrderingSettings(payload: {
+  online_ordering_enabled: boolean;
+  online_ordering_pause_reason: string | null;
+  dine_in_enabled: boolean;
+  takeout_enabled: boolean;
+  enforce_operating_hours: boolean;
+  kitchen_cutoff_minutes: number;
+  minimum_order_amount: number;
+  expected_version?: number;
+}): Promise<ManagerSettingsResponse> {
+  return request<ManagerSettingsResponse>("/api/v1/manager/settings/ordering", {
+    method: "PATCH",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(payload),
+  }).then(normalizeManagerSettings);
+}
+
+export function updateManagerNotificationSettings(payload: {
+  send_order_confirmation_emails: boolean;
+  send_contact_inquiry_emails: boolean;
+  expected_version?: number;
+}): Promise<ManagerSettingsResponse> {
+  return request<ManagerSettingsResponse>("/api/v1/manager/settings/notifications", {
+    method: "PATCH",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(payload),
+  }).then(normalizeManagerSettings);
+}
+
+export function changeStaffPassword(payload: {
+  current_password: string;
+  new_password: string;
+}): Promise<{ message: string }> {
+  return request<{ message: string }>("/api/v1/staff/auth/change-password", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(payload),
+  });
 }

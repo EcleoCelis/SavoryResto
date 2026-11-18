@@ -4,20 +4,52 @@ import { useEffect, useState } from "react";
 import Link from "next/link";
 import { Footer } from "../../components/layout/Footer";
 import { Header } from "../../components/layout/Header";
-import { getLiveOperatingStatus, RESTAURANT_INFO } from "../../config/restaurant";
+import { useRestaurantSettings } from "../../components/settings/RestaurantSettingsProvider";
+import { RESTAURANT_INFO } from "../../config/restaurant";
 import { ArrowRightIcon } from "../../components/ui/Icons";
 import styles from "../informational.module.css";
 
+function formatHhmmTo12h(hhmm: string): string {
+  const [hhRaw, mmRaw] = hhmm.split(":");
+  const hh = Number(hhRaw);
+  const mm = Number(mmRaw);
+  if (Number.isNaN(hh) || Number.isNaN(mm)) return hhmm;
+  const suffix = hh >= 12 ? "PM" : "AM";
+  const hr12 = hh % 12 || 12;
+  return `${hr12}:${String(mm).padStart(2, "0")} ${suffix}`;
+}
+
+function getManilaWeekday(tz: string): string {
+  return new Intl.DateTimeFormat("en-US", {
+    timeZone: tz || "Asia/Manila",
+    weekday: "long",
+  }).format(new Date());
+}
+
+function getManilaTimeString(tz: string): string {
+  const formatted = new Intl.DateTimeFormat("en-US", {
+    timeZone: tz || "Asia/Manila",
+    hour: "numeric",
+    minute: "2-digit",
+    hour12: true,
+  }).format(new Date());
+  return `${formatted} PHT`;
+}
+
 export default function HoursPage() {
-  const [liveStatus, setLiveStatus] = useState(() => getLiveOperatingStatus());
+  const { settings } = useRestaurantSettings();
+  const [, setTick] = useState(0);
+  const currentTimeString = getManilaTimeString(settings.restaurant.timezone);
+  const todayName = getManilaWeekday(settings.restaurant.timezone);
 
   useEffect(() => {
-    // Update live status every 60 seconds
     const interval = setInterval(() => {
-      setLiveStatus(getLiveOperatingStatus());
+      setTick((t) => t + 1);
     }, 60000);
     return () => clearInterval(interval);
   }, []);
+
+  const isOpen = settings.is_currently_open;
 
   return (
     <div className={styles.page}>
@@ -32,8 +64,8 @@ export default function HoursPage() {
               Restaurant Operating Hours
             </h1>
             <p className={styles.subtitle}>
-              We welcome you seven days a week for freshly prepared dine-in table
-              service and quick counter pickup in {RESTAURANT_INFO.locality}.
+              We welcome you for freshly prepared dine-in table
+              service and quick counter pickup in {settings.restaurant.locality}.
             </p>
           </div>
         </section>
@@ -46,8 +78,8 @@ export default function HoursPage() {
               style={{
                 maxWidth: "760px",
                 margin: "0 auto 32px",
-                background: liveStatus.isOpen ? "#edf7f0" : "#fef6f6",
-                border: `1px solid ${liveStatus.isOpen ? "#bfe3cb" : "#fcd4d4"}`,
+                background: isOpen ? "#edf7f0" : "#fef6f6",
+                border: `1px solid ${isOpen ? "#bfe3cb" : "#fcd4d4"}`,
                 borderRadius: "14px",
                 padding: "20px 24px",
                 display: "flex",
@@ -65,7 +97,7 @@ export default function HoursPage() {
                     width: "12px",
                     height: "12px",
                     borderRadius: "50%",
-                    background: liveStatus.isOpen ? "#2e6b5b" : "#c53030",
+                    background: isOpen ? "#2e6b5b" : "#c53030",
                     display: "inline-block",
                   }}
                   aria-hidden="true"
@@ -75,13 +107,13 @@ export default function HoursPage() {
                     style={{
                       display: "block",
                       fontSize: "16px",
-                      color: liveStatus.isOpen ? "#1b4d3e" : "#9b2c2c",
+                      color: isOpen ? "#1b4d3e" : "#9b2c2c",
                     }}
                   >
-                    {liveStatus.statusText}
+                    {settings.operating_status_text}
                   </strong>
                   <span style={{ fontSize: "12px", color: "#64748b" }}>
-                    Current time: {liveStatus.currentTimeString}
+                    Current time: {currentTimeString}
                   </span>
                 </div>
               </div>
@@ -125,11 +157,11 @@ export default function HoursPage() {
                     </tr>
                   </thead>
                   <tbody>
-                    {RESTAURANT_INFO.schedule.map((item) => {
-                      const isToday = item.day === liveStatus.todaySchedule.day;
+                    {settings.hours.map((item) => {
+                      const isToday = item.day_name === todayName;
                       return (
                         <tr
-                          key={item.day}
+                          key={item.day_of_week}
                           style={{
                             borderBottom: "1px solid #f0ecdf",
                             background: isToday ? "rgba(244, 190, 55, 0.08)" : "transparent",
@@ -137,7 +169,7 @@ export default function HoursPage() {
                           }}
                         >
                           <td style={{ padding: "14px 12px", color: isToday ? "var(--green)" : "#2d3748" }}>
-                            {item.day}
+                            {item.day_name}
                             {isToday && (
                               <span
                                 style={{
@@ -156,10 +188,10 @@ export default function HoursPage() {
                             )}
                           </td>
                           <td style={{ padding: "14px 12px", color: "#4a5568" }}>
-                            {item.openTime}
+                            {item.is_open ? formatHhmmTo12h(item.open_time) : "—"}
                           </td>
                           <td style={{ padding: "14px 12px", color: "#4a5568" }}>
-                            {item.closeTime}
+                            {item.is_open ? formatHhmmTo12h(item.close_time) : "—"}
                           </td>
                           <td style={{ padding: "14px 12px", textAlign: "right" }}>
                             <span
@@ -169,11 +201,11 @@ export default function HoursPage() {
                                 borderRadius: "6px",
                                 fontSize: "12px",
                                 fontWeight: "700",
-                                background: "#def7ec",
-                                color: "#03543f",
+                                background: item.is_open ? "#def7ec" : "#fde8e8",
+                                color: item.is_open ? "#03543f" : "#9b1c1c",
                               }}
                             >
-                              Open Daily
+                              {item.is_open ? "Open" : "Closed"}
                             </span>
                           </td>
                         </tr>
@@ -197,10 +229,10 @@ export default function HoursPage() {
                 }}
               >
                 <p style={{ margin: "0 0 8px" }}>
-                  <strong>🍽️ Kitchen Cut-off:</strong> {RESTAURANT_INFO.kitchenNotice}
+                  <strong>🍽️ Kitchen Cut-off:</strong> {settings.restaurant.kitchen_notice}
                 </p>
                 <p style={{ margin: 0 }}>
-                  <strong>📅 Holiday Schedules:</strong> {RESTAURANT_INFO.holidayNotice}
+                  <strong>📅 Holiday Schedules:</strong> {settings.restaurant.holiday_notice}
                 </p>
               </div>
             </div>
@@ -215,7 +247,7 @@ export default function HoursPage() {
                   </h3>
                 </header>
                 <p className={styles.cardText} style={{ marginBottom: "16px" }}>
-                  Located conveniently in {RESTAURANT_INFO.locality}. View parking tips,
+                  Located conveniently in {settings.restaurant.locality}. View parking tips,
                   landmarks, and an interactive directions map.
                 </p>
                 <Link

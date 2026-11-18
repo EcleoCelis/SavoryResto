@@ -59,6 +59,7 @@ function buildTopRoundedBarPath(
 
 type OrderVolumeChartProps = {
   period: RevenuePeriod;
+  refreshNonce?: number;
 };
 
 type FetchState = {
@@ -67,7 +68,10 @@ type FetchState = {
   error: string | null;
 };
 
-export default function OrderVolumeChart({ period }: OrderVolumeChartProps) {
+export default function OrderVolumeChart({
+  period,
+  refreshNonce = 0,
+}: OrderVolumeChartProps) {
   const headingId = useId();
   const stageRef = useRef<HTMLDivElement | null>(null);
   const requestSeqRef = useRef(0);
@@ -134,7 +138,7 @@ export default function OrderVolumeChart({ period }: OrderVolumeChartProps) {
       });
 
     return () => controller.abort();
-  }, [period, retryNonce]);
+  }, [period, retryNonce, refreshNonce]);
 
   const loading = fetchState.period !== period;
   const error = fetchState.period === period ? fetchState.error : null;

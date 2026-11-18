@@ -29,6 +29,7 @@ from app.services.email_service import email_service
 from app.services.fulfillment_service import validate_fulfillment
 from app.services.inventory_service import restore_inventory_for_cancelled_order
 from app.services.payment_method_service import get_active_payment_method
+from app.services.settings_service import validate_ordering_policy
 
 logger = logging.getLogger("savorybites.orders")
 
@@ -304,13 +305,18 @@ def place_order(
     )
 
     quote_lines = quote_checkout_items(db, order_request.items)
+    subtotal = sum((line.subtotal for line in quote_lines), Decimal("0"))
+    restaurant_cfg = validate_ordering_policy(
+        db,
+        order_type=order_request.order_type,
+        subtotal=subtotal,
+    )
     payment_method = get_active_payment_method(db, order_request.payment_method_code)
     if payment_method is None:
         raise ValueError("The selected payment method is unavailable. Please choose another method.")
     restaurant_table = validate_fulfillment(
         db, order_request.order_type, order_request.fulfillment_type, order_request.restaurant_table_id
     )
-    subtotal = sum((line.subtotal for line in quote_lines), Decimal("0"))
     now = datetime.now(timezone.utc)
     quoted_by_line = {line.cart_line_id: line for line in quote_lines}
 
@@ -362,7 +368,11 @@ def place_order(
         raise
 
     created = _load_customer_order(db, customer.customer_id, order.id)
-    if customer.email and getattr(customer, "email_order_updates", True):
+    if (
+        restaurant_cfg.send_order_confirmation_emails
+        and customer.email
+        and getattr(customer, "email_order_updates", True)
+    ):
         try:
             fulfillment_summary = (
                 f"Dine-In ({restaurant_table.table_number})"

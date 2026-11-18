@@ -3,6 +3,7 @@ from decimal import Decimal
 from typing import Any, Literal
 
 from sqlalchemy import func, or_, select
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session, joinedload, selectinload
 
 from app.db.models.category import MenuCategory
@@ -12,6 +13,16 @@ from app.db.models.product_option import MenuItemAddon, MenuItemSize
 from app.schemas.category import CategoryCreate, CategoryUpdate
 from app.schemas.product import ProductCreate, ProductUpdate
 from app.services.media_storage_service import delete_stored_dish_image
+
+
+class CatalogConflictError(ValueError):
+    """Raised when optimistic locking or uniqueness checks detect a concurrent change."""
+
+
+def _timestamps_match(actual: datetime, expected: datetime) -> bool:
+    actual_utc = actual if actual.tzinfo else actual.replace(tzinfo=timezone.utc)
+    expected_utc = expected if expected.tzinfo else expected.replace(tzinfo=timezone.utc)
+    return abs((actual_utc - expected_utc).total_seconds()) < 0.001
 
 
 def _product_options():
@@ -54,6 +65,7 @@ def list_manager_categories(db: Session) -> list[dict[str, Any]]:
             "display_order": category.display_order,
             "is_active": category.is_active,
             "product_count": count or 0,
+            "updated_at": category.updated_at,
         })
     return results
 
@@ -77,7 +89,11 @@ def create_category(db: Session, data: CategoryCreate) -> MenuCategory:
         updated_at=now,
     )
     db.add(category)
-    db.commit()
+    try:
+        db.commit()
+    except IntegrityError as exc:
+        db.rollback()
+        raise CatalogConflictError(f"A category with name '{clean_name}' already exists.") from exc
     db.refresh(category)
     return category
 
@@ -86,6 +102,8 @@ def update_category(db: Session, category_id: int, data: CategoryUpdate) -> Menu
     category = db.get(MenuCategory, category_id)
     if not category:
         return None
+    if data.expected_updated_at is not None and not _timestamps_match(category.updated_at, data.expected_updated_at):
+        raise CatalogConflictError("Category was updated by another manager. Refresh the menu and try again.")
     if data.name is not None:
         clean_name = data.name.strip()
         existing = db.scalar(
@@ -104,7 +122,11 @@ def update_category(db: Session, category_id: int, data: CategoryUpdate) -> Menu
     if data.is_active is not None:
         category.is_active = data.is_active
     category.updated_at = datetime.now(timezone.utc)
-    db.commit()
+    try:
+        db.commit()
+    except IntegrityError as exc:
+        db.rollback()
+        raise CatalogConflictError("Category update conflicted with an existing record.") from exc
     db.refresh(category)
     return category
 
@@ -266,6 +288,8 @@ def update_product(db: Session, product_id: int, data: ProductUpdate) -> MenuPro
     product = get_product_any_status(db, product_id)
     if not product:
         return None
+    if data.expected_updated_at is not None and not _timestamps_match(product.updated_at, data.expected_updated_at):
+        raise CatalogConflictError("This dish was modified by another manager. Refresh the menu and try again.")
     old_image_url = product.image_url
     if data.category_id is not None:
         category = db.get(MenuCategory, data.category_id)

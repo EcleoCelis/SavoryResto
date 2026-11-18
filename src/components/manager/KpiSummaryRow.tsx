@@ -31,6 +31,7 @@ function isValidKpiSummary(
 
 type KpiSummaryRowProps = {
   period: RevenuePeriod;
+  refreshNonce?: number;
 };
 
 type FetchState = {
@@ -39,7 +40,7 @@ type FetchState = {
   error: string | null;
 };
 
-export default function KpiSummaryRow({ period }: KpiSummaryRowProps) {
+export default function KpiSummaryRow({ period, refreshNonce = 0 }: KpiSummaryRowProps) {
   const requestSeqRef = useRef(0);
   const abortRef = useRef<AbortController | null>(null);
   const [retryNonce, setRetryNonce] = useState(0);
@@ -71,7 +72,7 @@ export default function KpiSummaryRow({ period }: KpiSummaryRowProps) {
       });
 
     return () => controller.abort();
-  }, [period, retryNonce]);
+  }, [period, retryNonce, refreshNonce]);
 
   const loading = fetchState.period !== period;
   const error = fetchState.period === period ? fetchState.error : null;

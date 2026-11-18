@@ -64,6 +64,7 @@ function isValidRevenueSeries(
 
 type RevenueTrendChartProps = {
   period: RevenuePeriod;
+  refreshNonce?: number;
 };
 
 type FetchState = {
@@ -72,7 +73,7 @@ type FetchState = {
   error: string | null;
 };
 
-export default function RevenueTrendChart({ period }: RevenueTrendChartProps) {
+export default function RevenueTrendChart({ period, refreshNonce = 0 }: RevenueTrendChartProps) {
   const headingId = useId();
   const stageRef = useRef<HTMLDivElement | null>(null);
   const requestSeqRef = useRef(0);
@@ -139,7 +140,7 @@ export default function RevenueTrendChart({ period }: RevenueTrendChartProps) {
       });
 
     return () => controller.abort();
-  }, [period, retryNonce]);
+  }, [period, retryNonce, refreshNonce]);
 
   const loading = fetchState.period !== period;
   const error = fetchState.period === period ? fetchState.error : null;

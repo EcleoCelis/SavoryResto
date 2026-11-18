@@ -13,6 +13,7 @@ from app.schemas.product import (
 )
 from app.services.catalog_service import (
     AvailabilityFilter,
+    CatalogConflictError,
     create_product,
     delete_product,
     get_product,
@@ -120,6 +121,8 @@ def update_product_endpoint(
 ):
     try:
         product = update_product(db, product_id, product_in)
+    except CatalogConflictError as err:
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=str(err))
     except ValueError as err:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(err))
     if product is None:

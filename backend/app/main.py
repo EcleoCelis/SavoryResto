@@ -21,7 +21,9 @@ from app.api.routes.media import router as media_router
 from app.api.routes.orders import router as orders_router
 from app.api.routes.payment_methods import router as payment_methods_router
 from app.api.routes.products import router as products_router
+from app.api.routes.reports import router as reports_router
 from app.api.routes.restaurant_tables import router as restaurant_tables_router
+from app.api.routes.settings import router as settings_router
 from app.api.routes.staff_auth import router as staff_auth_router
 from app.core.config import settings
 from app.db.database import get_db
@@ -154,6 +156,9 @@ app.add_middleware(
         "Authorization",
         "Idempotency-Key",
     ],
+    expose_headers=[
+        "Content-Disposition",
+    ],
 )
 
 # Route Mounting
@@ -169,6 +174,8 @@ app.include_router(restaurant_tables_router)
 app.include_router(staff_auth_router)
 app.include_router(kds_router)
 app.include_router(manager_router)
+app.include_router(reports_router)
+app.include_router(settings_router)
 app.include_router(inventory_router)
 app.include_router(media_router)
 

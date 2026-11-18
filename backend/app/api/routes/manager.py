@@ -3,6 +3,7 @@ from typing import Any, Literal
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Request, status
 from sqlalchemy import func, or_, select
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session, joinedload
 
 from app.core.config import settings
@@ -28,11 +29,23 @@ from app.schemas.customer import (
     ManagerCustomerStatusUpdateRequest,
     ManagerCustomerSummaryResponse,
 )
+from app.schemas.fulfillment import (
+    ManagerTableCreateRequest,
+    ManagerTablesOverviewResponse,
+    ManagerTableSummary,
+    ManagerTableUpdateRequest,
+)
 from app.schemas.kds import (
     KdsOrderResponse,
     KdsStatusUpdateRequest,
     ManagerOrderDetailResponse,
     ManagerOrderListResponse,
+)
+from app.schemas.payment_method import (
+    ManagerPaymentMethodCreateRequest,
+    ManagerPaymentMethodSummary,
+    ManagerPaymentMethodUpdateRequest,
+    ManagerPaymentsLedgerResponse,
 )
 from app.schemas.staff import (
     AuditLogResponse,
@@ -55,11 +68,26 @@ from app.services.customer_service import (
     list_manager_customers,
     update_manager_customer_status,
 )
+from app.services.fulfillment_service import (
+    StaleTableUpdateError,
+    TableConflictError,
+    create_manager_table,
+    list_manager_tables,
+    update_manager_table,
+)
 from app.services.kds_service import (
+    OrderConflictError,
     get_manager_order_detail,
     list_kds_orders,
     list_manager_orders_directory,
     update_manager_order_status,
+)
+from app.services.payment_method_service import (
+    PaymentMethodConflictError,
+    create_manager_payment_method,
+    get_manager_payments_ledger,
+    list_manager_payment_methods,
+    update_manager_payment_method,
 )
 from app.services.staff_service import ALLOWED_STAFF_ROLES
 
@@ -71,6 +99,7 @@ perm_orders = require_permission(Permission.ORDER_COMPLETE)
 perm_staff = require_permission(Permission.STAFF_MANAGE)
 perm_roles = require_permission(Permission.ROLES_ASSIGN)
 perm_security = require_permission(Permission.SECURITY_MANAGE)
+perm_system_config = require_permission(Permission.SYSTEM_CONFIG_MANAGE)
 perm_analytics = require_permission(Permission.SALES_VIEW)
 perm_audit = require_permission(Permission.AUDIT_VIEW)
 perm_customer_view = require_permission(Permission.CUSTOMER_VIEW)
@@ -167,9 +196,13 @@ def update_manager_order_status_endpoint(
             order_id,
             request.status,
             cancellation_reason=request.cancellation_reason,
+            expected_updated_at=request.expected_updated_at,
         )
     except PermissionError as error:
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail=str(error))
+    except OrderConflictError as error:
+        db.rollback()
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=str(error))
     except ValueError as error:
         db.rollback()
         raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_CONTENT, detail=str(error))
@@ -202,6 +235,16 @@ def update_manager_order_status_endpoint(
 # Staff Account Administration (Privileged IAM)
 # ============================================================
 
+def _escape_like_pattern(value: str) -> str:
+    return value.replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_")
+
+
+def _to_utc_timestamp(value: datetime) -> datetime:
+    if value.tzinfo is None:
+        return value.replace(tzinfo=timezone.utc)
+    return value.astimezone(timezone.utc)
+
+
 @router.get("/staff", response_model=list[StaffDetailResponse])
 def list_staff_accounts(
     search: str | None = Query(default=None, max_length=120),
@@ -223,9 +266,12 @@ def list_staff_accounts(
     if status_filter is not None:
         stmt = stmt.where(StaffUser.status == status_filter)
     if search and search.strip():
-        pattern = f"%{search.strip()}%"
+        pattern = f"%{_escape_like_pattern(search.strip())}%"
         stmt = stmt.where(
-            or_(StaffUser.name.ilike(pattern), StaffUser.email.ilike(pattern))
+            or_(
+                StaffUser.name.ilike(pattern, escape="\\"),
+                StaffUser.email.ilike(pattern, escape="\\"),
+            )
         )
     users = db.scalars(stmt.order_by(StaffUser.id)).all()
     return [_serialize_staff_detail(u) for u in users]
@@ -278,24 +324,30 @@ def create_staff_account(
         created_at=now,
         updated_at=now,
     )
-    db.add(new_staff)
-    db.commit()
+    try:
+        db.add(new_staff)
+        db.flush()
+        # Commits both the newly provisioned staff record and audit entry atomically
+        record_audit_event(
+            db=db,
+            event_type="staff.create",
+            actor_type="staff",
+            actor_id=current_staff.id,
+            actor_email=current_staff.email,
+            target_type="staff",
+            target_id=str(new_staff.id),
+            outcome="success",
+            ip_address=client_ip,
+            details={"name": new_staff.name, "assigned_role": role_name, "email": email_clean},
+        )
+    except IntegrityError:
+        db.rollback()
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="A staff account with this email address already exists.",
+        )
+
     db.refresh(new_staff)
-
-    # Record audit log
-    record_audit_event(
-        db=db,
-        event_type="staff.create",
-        actor_type="staff",
-        actor_id=current_staff.id,
-        actor_email=current_staff.email,
-        target_type="staff",
-        target_id=str(new_staff.id),
-        outcome="success",
-        ip_address=client_ip,
-        details={"name": new_staff.name, "assigned_role": role_name, "email": email_clean},
-    )
-
     return _serialize_staff_detail(new_staff)
 
 
@@ -307,13 +359,23 @@ def update_staff_status(
     current_staff: StaffUser = Depends(perm_staff),
     db: Session = Depends(get_db),
 ):
-    """Activate or deactivate a staff member with self-deactivation and last-manager protections."""
+    """Activate or deactivate a staff member with self-deactivation, concurrency, and last-manager protections."""
     client_ip = get_client_ip(req)
+    # Lock the manager role row first to serialize concurrent last-manager checks cleanly
+    db.scalar(select(Role).where(Role.name == "manager").with_for_update())
+
     target = db.scalar(
         select(StaffUser).options(joinedload(StaffUser.role)).where(StaffUser.id == staff_id).with_for_update(of=StaffUser)
     )
     if not target:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Staff account not found.")
+
+    if request.expected_updated_at is not None:
+        if abs((_to_utc_timestamp(target.updated_at) - _to_utc_timestamp(request.expected_updated_at)).total_seconds()) > 0.001:
+            raise HTTPException(
+                status_code=status.HTTP_409_CONFLICT,
+                detail="This staff account was updated by another session. Refresh before applying changes.",
+            )
 
     # 1. Self-deactivation protection
     if staff_id == current_staff.id and request.status == "inactive":
@@ -335,13 +397,15 @@ def update_staff_status(
                 detail="Cannot deactivate the last active Manager account. At least one active Manager must be preserved.",
             )
 
+    if target.status == request.status:
+        return _serialize_staff_detail(target)
+
     old_status = target.status
     target.status = request.status
     target.updated_at = datetime.now(timezone.utc)
-    db.commit()
-    db.refresh(target)
+    db.flush()
 
-    # Audit log
+    # Commits status transition and audit log entry atomically
     record_audit_event(
         db=db,
         event_type="staff.status_change",
@@ -354,6 +418,7 @@ def update_staff_status(
         ip_address=client_ip,
         details={"previous_status": old_status, "new_status": request.status, "target_email": target.email},
     )
+    db.refresh(target)
 
     return _serialize_staff_detail(target)
 
@@ -366,7 +431,7 @@ def update_staff_role(
     current_staff: StaffUser = Depends(perm_roles),
     db: Session = Depends(get_db),
 ):
-    """Assign or modify a staff member's role with last-manager demotion protections."""
+    """Assign or modify a staff member's role with last-manager demotion and concurrency protections."""
     client_ip = get_client_ip(req)
     role_name = request.role.strip().lower()
     if role_name not in ALLOWED_STAFF_ROLES:
@@ -375,11 +440,21 @@ def update_staff_role(
             detail=f"Role '{request.role}' is not an authorized staff role.",
         )
 
+    # Lock the manager role row first to serialize concurrent last-manager demotion checks
+    db.scalar(select(Role).where(Role.name == "manager").with_for_update())
+
     target = db.scalar(
         select(StaffUser).options(joinedload(StaffUser.role)).where(StaffUser.id == staff_id).with_for_update(of=StaffUser)
     )
     if not target:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Staff account not found.")
+
+    if request.expected_updated_at is not None:
+        if abs((_to_utc_timestamp(target.updated_at) - _to_utc_timestamp(request.expected_updated_at)).total_seconds()) > 0.001:
+            raise HTTPException(
+                status_code=status.HTTP_409_CONFLICT,
+                detail="This staff account was updated by another session. Refresh before applying changes.",
+            )
 
     new_role = db.scalar(select(Role).where(Role.name == role_name))
     if not new_role:
@@ -398,13 +473,15 @@ def update_staff_role(
                 detail="Cannot demote the last active Manager account. At least one active Manager must be preserved.",
             )
 
+    if target.role.name == role_name:
+        return _serialize_staff_detail(target)
+
     old_role_name = target.role.name
     target.role_id = new_role.id
     target.updated_at = datetime.now(timezone.utc)
-    db.commit()
-    db.refresh(target)
+    db.flush()
 
-    # Audit log
+    # Commits role transition and audit log entry atomically
     record_audit_event(
         db=db,
         event_type="staff.role_change",
@@ -417,6 +494,7 @@ def update_staff_role(
         ip_address=client_ip,
         details={"previous_role": old_role_name, "new_role": role_name, "target_email": target.email},
     )
+    db.refresh(target)
 
     return _serialize_staff_detail(target)
 
@@ -646,4 +724,160 @@ def patch_manager_customer_status(
         raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_CONTENT, detail=str(err))
     if updated is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Customer not found.")
+    return updated
+
+
+# ============================================================
+# Dining Tables & Floor Management
+# ============================================================
+
+@router.get("/tables", response_model=ManagerTablesOverviewResponse)
+def get_manager_tables(
+    current_staff: StaffUser = Depends(perm_orders_monitor),
+    db: Session = Depends(get_db),
+):
+    """List all dining tables with live occupancy, active orders, and seating totals."""
+    del current_staff
+    return list_manager_tables(db)
+
+
+@router.post("/tables", response_model=ManagerTableSummary, status_code=status.HTTP_201_CREATED)
+def post_manager_table(
+    payload: ManagerTableCreateRequest,
+    req: Request,
+    current_staff: StaffUser = Depends(perm_system_config),
+    db: Session = Depends(get_db),
+):
+    """Provision a new restaurant dining table."""
+    try:
+        return create_manager_table(
+            db,
+            request=payload,
+            staff_user=current_staff,
+            ip_address=get_client_ip(req),
+        )
+    except TableConflictError as err:
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=str(err))
+
+
+@router.patch("/tables/{table_id}", response_model=ManagerTableSummary)
+def patch_manager_table(
+    table_id: int,
+    payload: ManagerTableUpdateRequest,
+    req: Request,
+    current_staff: StaffUser = Depends(perm_system_config),
+    db: Session = Depends(get_db),
+):
+    """Update a dining table label, seat count, or active status (guarded against occupied tables)."""
+    try:
+        updated = update_manager_table(
+            db,
+            table_id=table_id,
+            request=payload,
+            staff_user=current_staff,
+            ip_address=get_client_ip(req),
+        )
+    except StaleTableUpdateError as err:
+        db.rollback()
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=str(err))
+    except TableConflictError as err:
+        db.rollback()
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=str(err))
+    except ValueError as err:
+        db.rollback()
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(err))
+    if updated is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Dining table not found.")
+    return updated
+
+
+# ============================================================
+# Payments Ledger & Payment Methods Configuration
+# ============================================================
+
+@router.get("/payments/ledger", response_model=ManagerPaymentsLedgerResponse)
+def get_manager_payments_ledger_endpoint(
+    search: str | None = Query(default=None, max_length=120),
+    settlement: Literal["all", "settled", "pending", "voided"] = Query(default="all"),
+    method_code: str = Query(default="all", max_length=50),
+    date_from: date | None = Query(default=None),
+    date_to: date | None = Query(default=None),
+    page: int = Query(default=1, ge=1),
+    page_size: int = Query(default=15, ge=1, le=50),
+    current_staff: StaffUser = Depends(perm_analytics),
+    db: Session = Depends(get_db),
+):
+    """Return authoritative order-backed billing ledger and per-method settlement totals."""
+    del current_staff
+    if date_from is not None and date_to is not None and date_from > date_to:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
+            detail="date_from cannot be later than date_to.",
+        )
+    return get_manager_payments_ledger(
+        db,
+        search=search,
+        settlement=settlement,
+        method_code=method_code,
+        date_from=date_from,
+        date_to=date_to,
+        page=page,
+        page_size=page_size,
+    )
+
+
+@router.get("/payments/methods", response_model=list[ManagerPaymentMethodSummary])
+def get_manager_payment_methods_endpoint(
+    current_staff: StaffUser = Depends(perm_analytics),
+    db: Session = Depends(get_db),
+):
+    """List all configured restaurant payment methods with real order volume and revenue totals."""
+    del current_staff
+    return list_manager_payment_methods(db)
+
+
+@router.post("/payments/methods", response_model=ManagerPaymentMethodSummary, status_code=status.HTTP_201_CREATED)
+def post_manager_payment_method_endpoint(
+    payload: ManagerPaymentMethodCreateRequest,
+    req: Request,
+    current_staff: StaffUser = Depends(perm_system_config),
+    db: Session = Depends(get_db),
+):
+    """Add a new restaurant payment method for checkout selection."""
+    try:
+        return create_manager_payment_method(
+            db,
+            request=payload,
+            staff_user=current_staff,
+            ip_address=get_client_ip(req),
+        )
+    except PaymentMethodConflictError as err:
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=str(err))
+
+
+@router.patch("/payments/methods/{method_id}", response_model=ManagerPaymentMethodSummary)
+def patch_manager_payment_method_endpoint(
+    method_id: int,
+    payload: ManagerPaymentMethodUpdateRequest,
+    req: Request,
+    current_staff: StaffUser = Depends(perm_system_config),
+    db: Session = Depends(get_db),
+):
+    """Update payment method display/status while preserving at least one active checkout method."""
+    try:
+        updated = update_manager_payment_method(
+            db,
+            method_id=method_id,
+            request=payload,
+            staff_user=current_staff,
+            ip_address=get_client_ip(req),
+        )
+    except PaymentMethodConflictError as err:
+        db.rollback()
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=str(err))
+    except ValueError as err:
+        db.rollback()
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(err))
+    if updated is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Payment method not found.")
     return updated

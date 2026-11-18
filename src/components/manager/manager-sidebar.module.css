@@ -48,6 +48,10 @@
   line-height: 1.25;
 }
 
+:global(html[data-resolved-theme="dark"]) .brandName {
+  color: var(--text-primary);
+}
+
 .brandSub {
   font-size: 0.7rem;
   color: var(--text-muted);

@@ -224,22 +224,18 @@
   position: absolute;
   inset: 28px 24px 44px 64px;
   border-radius: 8px;
-  background: linear-gradient(
-    90deg,
-    rgba(235, 243, 239, 0.35) 0%,
-    rgba(235, 243, 239, 0.75) 50%,
-    rgba(235, 243, 239, 0.35) 100%
-  );
-  background-size: 200% 100%;
-  animation: shimmer 1.4s ease-in-out infinite;
+  background-color: var(--border-subtle);
+  opacity: 0.55;
+  animation: pulse 1.4s ease-in-out infinite;
 }
 
-@keyframes shimmer {
-  0% {
-    background-position: 200% 0;
-  }
+@keyframes pulse {
+  0%,
   100% {
-    background-position: -200% 0;
+    opacity: 0.35;
+  }
+  50% {
+    opacity: 0.72;
   }
 }
 

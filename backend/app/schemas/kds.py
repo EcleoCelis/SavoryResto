@@ -30,6 +30,7 @@ class KdsOrderResponse(BaseModel):
 class KdsStatusUpdateRequest(BaseModel):
     status: OrderStatus
     cancellation_reason: str | None = Field(default=None, max_length=500)
+    expected_updated_at: datetime | None = None
 
 
 class ManagerOrderItemDetailResponse(BaseModel):

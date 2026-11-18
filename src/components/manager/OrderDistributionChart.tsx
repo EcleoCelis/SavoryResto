@@ -70,6 +70,7 @@ type SegmentArc = {
 
 type OrderDistributionChartProps = {
   period: RevenuePeriod;
+  refreshNonce?: number;
 };
 
 type FetchState = {
@@ -78,7 +79,10 @@ type FetchState = {
   error: string | null;
 };
 
-export default function OrderDistributionChart({ period }: OrderDistributionChartProps) {
+export default function OrderDistributionChart({
+  period,
+  refreshNonce = 0,
+}: OrderDistributionChartProps) {
   const headingId = useId();
   const requestSeqRef = useRef(0);
   const abortRef = useRef<AbortController | null>(null);
@@ -115,7 +119,7 @@ export default function OrderDistributionChart({ period }: OrderDistributionChar
       });
 
     return () => controller.abort();
-  }, [period, retryNonce]);
+  }, [period, retryNonce, refreshNonce]);
 
   const isLoading = fetchState.period !== period;
   const error = fetchState.period === period ? fetchState.error : null;

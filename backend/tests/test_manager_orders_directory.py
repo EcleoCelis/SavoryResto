@@ -27,6 +27,7 @@ from app.db.models.product import MenuProduct
 from app.db.models.restaurant_table import RestaurantTable
 from app.db.models.staff import Role, StaffUser
 from app.services.kds_service import (
+    OrderConflictError,
     get_manager_order_detail,
     list_manager_orders_directory,
     update_manager_order_status,
@@ -272,6 +273,36 @@ class ManagerOrdersDirectoryServiceTests(TestCase):
         self.assertFalse(detail_cancelled.can_complete)
         self.assertFalse(detail_cancelled.can_cancel)
 
+    def test_search_wildcard_escaping_and_optimistic_concurrency(self):
+        # Search for literal '%' must not match all orders
+        res_pct = list_manager_orders_directory(self.db, search="%")
+        self.assertEqual(res_pct.total, 0)
+
+        # Stale expected_updated_at raises OrderConflictError without mutating order
+        stale_ts = self.order_ready.updated_at - timedelta(minutes=10)
+        with self.assertRaises(OrderConflictError):
+            update_manager_order_status(
+                self.db,
+                self.manager,
+                self.order_ready.id,
+                OrderStatus.COMPLETED,
+                expected_updated_at=stale_ts,
+            )
+        self.db.rollback()
+        self.assertEqual(get_manager_order_detail(self.db, self.order_ready.id).status, OrderStatus.READY)
+
+        # Fresh expected_updated_at completes cleanly, then duplicate retry fails deterministically
+        done = update_manager_order_status(
+            self.db,
+            self.manager,
+            self.order_ready.id,
+            OrderStatus.COMPLETED,
+            expected_updated_at=self.order_ready.updated_at,
+        )
+        self.assertEqual(done.status, OrderStatus.COMPLETED)
+        with self.assertRaisesRegex(ValueError, "cannot transition"):
+            update_manager_order_status(self.db, self.manager, self.order_ready.id, OrderStatus.COMPLETED)
+
 
 class ManagerOrdersDirectoryApiTests(TestCase):
     @classmethod
@@ -418,3 +449,18 @@ class ManagerOrdersDirectoryApiTests(TestCase):
             self._request("/api/v1/manager/orders/99999999", headers={"Cookie": self.mgr_cookie})[0],
             404,
         )
+
+        # Sending stale expected_updated_at against an existing order fails cleanly with 409 Conflict
+        if directory["items"]:
+            first_id = directory["items"][0]["id"]
+            conflict_code, conflict_body, _ = self._request(
+                f"/api/v1/manager/orders/{first_id}/status",
+                method="PATCH",
+                body={
+                    "status": "completed",
+                    "expected_updated_at": "2000-01-01T00:00:00Z",
+                },
+                headers={"Cookie": self.mgr_cookie},
+            )
+            self.assertEqual(conflict_code, 409)
+            self.assertIn("detail", conflict_body)

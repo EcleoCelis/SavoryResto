@@ -8,6 +8,7 @@ export type Category = {
 export type CategoryDetail = Category & {
   is_active: boolean;
   product_count: number;
+  updated_at?: string | null;
 };
 
 export type Product = {
@@ -18,6 +19,7 @@ export type Product = {
   image_url: string | null;
   price: number;
   is_available: boolean;
+  updated_at?: string | null;
   category: Category;
   sizes: ProductOption[];
   addons: ProductOption[];
@@ -39,7 +41,9 @@ export type ProductCreateInput = {
   is_available?: boolean;
 };
 
-export type ProductUpdateInput = Partial<ProductCreateInput>;
+export type ProductUpdateInput = Partial<ProductCreateInput> & {
+  expected_updated_at?: string | null;
+};
 
 export type CategoryCreateInput = {
   name: string;
@@ -48,7 +52,9 @@ export type CategoryCreateInput = {
   is_active?: boolean;
 };
 
-export type CategoryUpdateInput = Partial<CategoryCreateInput>;
+export type CategoryUpdateInput = Partial<CategoryCreateInput> & {
+  expected_updated_at?: string | null;
+};
 
 export type DishImageUploadResponse = {
   filename: string;

@@ -270,3 +270,114 @@ class ManagerStaffAdminApiTests(TestCase):
         # Kitchen Staff rejected from both
         self.assertEqual(self._request("/api/v1/manager/security/overview", headers={"Cookie": self.kit_cookie})[0], 403)
         self.assertEqual(self._request("/api/v1/manager/analytics/summary", headers={"Cookie": self.kit_cookie})[0], 403)
+
+    def test_07_optimistic_concurrency_wildcard_escaping_and_session_revocation(self):
+        """Verify validation, literal LIKE escaping, 409 stale updates, and immediate JWT revocation."""
+        # 1. Whitespace-only name rejected cleanly with 422
+        blank_res = self._request(
+            "/api/v1/manager/staff",
+            method="POST",
+            body={
+                "name": "   ",
+                "email": f"blank-{uuid4().hex[:6]}@savorybites.staging",
+                "role": "kitchen_staff",
+                "password": "BlankName2026!Secure",
+            },
+            headers={"Cookie": self.mgr_cookie},
+        )
+        self.assertEqual(blank_res[0], 422)
+
+        # 2. Literal '%' must not act as SQL wildcard on staff list or audit logs
+        wild_staff_status, wild_staff, _ = self._request(
+            "/api/v1/manager/staff?search=%25",
+            headers={"Cookie": self.mgr_cookie},
+        )
+        self.assertEqual(wild_staff_status, 200)
+        self.assertEqual(wild_staff, [])
+
+        wild_audit_status, wild_logs, _ = self._request(
+            "/api/v1/manager/audit-logs?search=%25",
+            headers={"Cookie": self.mgr_cookie},
+        )
+        self.assertEqual(wild_audit_status, 200)
+        self.assertEqual(wild_logs, [])
+
+        # 3. Create synthetic KDS account, test duplicate 409, optimistic conflict 409, and instant revocation
+        temp_email = f"rev-{uuid4().hex[:6]}@savorybites.staging"
+        create_payload = {
+            "name": "Revocation Check Staff",
+            "email": temp_email,
+            "role": "kitchen_staff",
+            "password": "RevokeCheck2026!Secure",
+        }
+        st_create, created, _ = self._request(
+            "/api/v1/manager/staff",
+            method="POST",
+            body=create_payload,
+            headers={"Cookie": self.mgr_cookie},
+        )
+        self.assertEqual(st_create, 201)
+
+        dup_status, _, _ = self._request(
+            "/api/v1/manager/staff",
+            method="POST",
+            body=create_payload,
+            headers={"Cookie": self.mgr_cookie},
+        )
+        self.assertEqual(dup_status, 409)
+
+        # Mint a role-bound session token as produced by /api/v1/staff/auth/login
+        kds_token = create_staff_access_token(created["id"], timedelta(hours=1), role="kitchen_staff")
+        kds_headers = {"Cookie": f"staff_access_token={kds_token}"}
+        self.assertEqual(self._request("/api/v1/staff/auth/me", headers=kds_headers)[0], 200)
+
+        # Stale expected_updated_at -> 409 Conflict
+        stale_status, _, _ = self._request(
+            f"/api/v1/manager/staff/{created['id']}/status",
+            method="PATCH",
+            body={"status": "inactive", "expected_updated_at": "2000-01-01T00:00:00Z"},
+            headers={"Cookie": self.mgr_cookie},
+        )
+        self.assertEqual(stale_status, 409)
+
+        stale_role, _, _ = self._request(
+            f"/api/v1/manager/staff/{created['id']}/role",
+            method="PATCH",
+            body={"role": "manager", "expected_updated_at": "2000-01-01T00:00:00Z"},
+            headers={"Cookie": self.mgr_cookie},
+        )
+        self.assertEqual(stale_role, 409)
+
+        # Current expected_updated_at -> 200 OK & immediate 401 session revocation
+        deact_status, deactivated, _ = self._request(
+            f"/api/v1/manager/staff/{created['id']}/status",
+            method="PATCH",
+            body={"status": "inactive", "expected_updated_at": created["updated_at"]},
+            headers={"Cookie": self.mgr_cookie},
+        )
+        self.assertEqual(deact_status, 200)
+        self.assertEqual(deactivated["status"], "inactive")
+        self.assertEqual(self._request("/api/v1/staff/auth/me", headers=kds_headers)[0], 401)
+
+        # Reactivate and promote to manager -> previous role-bound KDS token stays 401 (role mismatch)
+        react_status, reactivated, _ = self._request(
+            f"/api/v1/manager/staff/{created['id']}/status",
+            method="PATCH",
+            body={"status": "active", "expected_updated_at": deactivated["updated_at"]},
+            headers={"Cookie": self.mgr_cookie},
+        )
+        self.assertEqual(react_status, 200)
+        promo_status, promoted, _ = self._request(
+            f"/api/v1/manager/staff/{created['id']}/role",
+            method="PATCH",
+            body={"role": "manager", "expected_updated_at": reactivated["updated_at"]},
+            headers={"Cookie": self.mgr_cookie},
+        )
+        self.assertEqual(promo_status, 200)
+        self.assertEqual(promoted["role"], "manager")
+        self.assertEqual(self._request("/api/v1/staff/auth/me", headers=kds_headers)[0], 401)
+
+        with SessionLocal() as db:
+            db.query(AuditLog).filter(AuditLog.target_type == "staff", AuditLog.target_id == str(created["id"])).delete(synchronize_session=False)
+            db.query(StaffUser).filter(StaffUser.id == created["id"]).delete(synchronize_session=False)
+            db.commit()

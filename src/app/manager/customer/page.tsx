@@ -1,8 +1,10 @@
 "use client";
 
+import Link from "next/link";
 import { useCallback, useEffect, useState, type FormEvent } from "react";
 import { useRouter } from "next/navigation";
 
+import { RefreshIcon } from "../../../components/ui/Icons";
 import {
   getManagerCustomerDetail,
   getManagerCustomers,
@@ -26,6 +28,7 @@ function formatDate(iso: string | null): string {
   const parsed = new Date(iso);
   if (Number.isNaN(parsed.getTime())) return "Unknown";
   return parsed.toLocaleDateString("en-PH", {
+    timeZone: "Asia/Manila",
     year: "numeric",
     month: "short",
     day: "numeric",
@@ -43,24 +46,32 @@ export default function ManagerCustomerPage() {
   const [page, setPage] = useState(1);
   const [loadingList, setLoadingList] = useState(true);
   const [loadingDetail, setLoadingDetail] = useState(false);
+  const [refreshing, setRefreshing] = useState(false);
+  const [refreshNonce, setRefreshNonce] = useState(0);
   const [statusReason, setStatusReason] = useState("");
+  const [confirmDeactivateOpen, setConfirmDeactivateOpen] = useState(false);
   const [updatingStatus, setUpdatingStatus] = useState(false);
   const [feedback, setFeedback] = useState<{ type: "success" | "error"; text: string } | null>(null);
 
-  const fetchDirectory = useCallback(async () => {
-    const res = await getManagerCustomers({
-      search: activeQuery,
-      status: statusFilter,
-      page,
-    });
-    return res;
-  }, [activeQuery, page, statusFilter]);
+  const fetchDirectory = useCallback(
+    async (signal?: AbortSignal) => {
+      return getManagerCustomers(
+        {
+          search: activeQuery,
+          status: statusFilter,
+          page,
+        },
+        signal
+      );
+    },
+    [activeQuery, page, statusFilter]
+  );
 
   useEffect(() => {
-    let active = true;
-    void fetchDirectory()
+    const controller = new AbortController();
+    void fetchDirectory(controller.signal)
       .then((res) => {
-        if (!active) return;
+        if (controller.signal.aborted) return;
         setDirectory(res);
         setSelectedId((prev) => {
           if (prev !== null && res.items.some((item) => item.customer_id === prev)) {
@@ -70,7 +81,7 @@ export default function ManagerCustomerPage() {
         });
       })
       .catch((err) => {
-        if (!active) return;
+        if (controller.signal.aborted) return;
         if (err instanceof StaffApiError && err.status === 401) {
           router.replace("/staff/login");
           return;
@@ -81,48 +92,96 @@ export default function ManagerCustomerPage() {
         });
       })
       .finally(() => {
-        if (active) setLoadingList(false);
+        if (!controller.signal.aborted) {
+          setLoadingList(false);
+          setRefreshing(false);
+        }
       });
     return () => {
-      active = false;
+      controller.abort();
     };
-  }, [fetchDirectory, router]);
+  }, [fetchDirectory, refreshNonce, router]);
 
   useEffect(() => {
     if (selectedId === null) {
       return;
     }
-    let active = true;
-    void getManagerCustomerDetail(selectedId)
+    const controller = new AbortController();
+    void getManagerCustomerDetail(selectedId, controller.signal)
       .then((loaded) => {
-        if (active) setDetail(loaded);
+        if (!controller.signal.aborted) {
+          setDetail(loaded);
+        }
       })
       .catch((err) => {
+        if (controller.signal.aborted) return;
         if (err instanceof StaffApiError && err.status === 401) {
           router.replace("/staff/login");
           return;
         }
-        if (active) {
-          setFeedback({
-            type: "error",
-            text: err instanceof Error ? err.message : "Unable to load customer profile.",
-          });
-        }
+        setFeedback({
+          type: "error",
+          text: err instanceof Error ? err.message : "Unable to load customer profile.",
+        });
       })
       .finally(() => {
-        if (active) setLoadingDetail(false);
+        if (!controller.signal.aborted) {
+          setLoadingDetail(false);
+        }
       });
     return () => {
-      active = false;
+      controller.abort();
     };
-  }, [router, selectedId]);
+  }, [refreshNonce, router, selectedId]);
 
-  const activeDetail = selectedId === null ? null : detail;
+  useEffect(() => {
+    if (!confirmDeactivateOpen) return;
+    function handleKeyDown(event: KeyboardEvent) {
+      if (event.key === "Escape" && !updatingStatus) {
+        setConfirmDeactivateOpen(false);
+      }
+    }
+    document.addEventListener("keydown", handleKeyDown);
+    return () => document.removeEventListener("keydown", handleKeyDown);
+  }, [confirmDeactivateOpen, updatingStatus]);
+
+  const activeDetail =
+    selectedId !== null && detail?.customer.customer_id === selectedId ? detail : null;
+
+  function handleSelectCustomer(customerId: number) {
+    if (customerId !== selectedId) {
+      setLoadingDetail(true);
+      setSelectedId(customerId);
+    }
+  }
 
   function handleSearchSubmit(event: FormEvent) {
     event.preventDefault();
+    setLoadingList(true);
     setPage(1);
     setActiveQuery(searchInput.trim());
+  }
+
+  function handleResetFilters() {
+    setLoadingList(true);
+    setSearchInput("");
+    setActiveQuery("");
+    setStatusFilter("all");
+    setPage(1);
+    setFeedback(null);
+  }
+
+  function handleDeactivateClick() {
+    if (!activeDetail) return;
+    if (statusReason.trim().length < 3) {
+      setFeedback({
+        type: "error",
+        text: "Please enter an audit reason (at least 3 characters) before deactivating this account.",
+      });
+      return;
+    }
+    setFeedback(null);
+    setConfirmDeactivateOpen(true);
   }
 
   async function handleToggleAccountStatus(nextActive: boolean) {
@@ -135,6 +194,7 @@ export default function ManagerCustomerPage() {
         nextActive,
         statusReason
       );
+      setConfirmDeactivateOpen(false);
       setDetail(updated);
       setStatusReason("");
       const refreshed = await fetchDirectory();
@@ -155,10 +215,26 @@ export default function ManagerCustomerPage() {
     }
   }
 
+  const hasActiveFilters = Boolean(activeQuery) || statusFilter !== "all";
+
   return (
     <div className={styles.workspace}>
       <header className={styles.headerRow}>
         <h1 className={styles.title}>Customer Directory</h1>
+        <div className={styles.headerActions}>
+          <button
+            type="button"
+            className={styles.refreshBtn}
+            disabled={refreshing}
+            onClick={() => {
+              setRefreshing(true);
+              setRefreshNonce((prev) => prev + 1);
+            }}
+          >
+            <RefreshIcon size={15} className={refreshing ? styles.spinningIcon : undefined} />
+            <span>{refreshing ? "Refreshing..." : "Refresh"}</span>
+          </button>
+        </div>
       </header>
 
       {feedback && (
@@ -192,6 +268,7 @@ export default function ManagerCustomerPage() {
               type="button"
               className={`${styles.filterTab} ${statusFilter === tab ? styles.filterTabActive : ""}`}
               onClick={() => {
+                setLoadingList(true);
                 setPage(1);
                 setStatusFilter(tab);
               }}
@@ -200,6 +277,12 @@ export default function ManagerCustomerPage() {
             </button>
           ))}
         </div>
+
+        {hasActiveFilters && (
+          <button type="button" className={styles.clearBtn} onClick={handleResetFilters}>
+            Clear Filters
+          </button>
+        )}
       </div>
 
       <div className={styles.splitGrid}>
@@ -217,7 +300,7 @@ export default function ManagerCustomerPage() {
                       <th>Customer</th>
                       <th>Status</th>
                       <th className={styles.numericCol}>Orders</th>
-                      <th className={styles.numericCol}>Total Spend</th>
+                      <th className={styles.numericCol}>Completed Spend</th>
                     </tr>
                   </thead>
                   <tbody>
@@ -229,11 +312,11 @@ export default function ManagerCustomerPage() {
                           tabIndex={0}
                           aria-selected={isSelected}
                           className={`${styles.customerRow} ${isSelected ? styles.customerRowSelected : ""}`}
-                          onClick={() => setSelectedId(row.customer_id)}
+                          onClick={() => handleSelectCustomer(row.customer_id)}
                           onKeyDown={(e) => {
                             if (e.key === "Enter" || e.key === " ") {
                               e.preventDefault();
-                              setSelectedId(row.customer_id);
+                              handleSelectCustomer(row.customer_id);
                             }
                           }}
                         >
@@ -309,7 +392,7 @@ export default function ManagerCustomerPage() {
                   <span className={styles.statValue}>{activeDetail.customer.order_count}</span>
                 </div>
                 <div className={styles.statTile}>
-                  <span className={styles.statLabel}>Lifetime Spend</span>
+                  <span className={styles.statLabel}>Completed Spend</span>
                   <span className={styles.statValue}>
                     {currencyFormatter.format(activeDetail.customer.total_spent)}
                   </span>
@@ -351,7 +434,14 @@ export default function ManagerCustomerPage() {
                   {activeDetail.recent_orders.map((order) => (
                     <div key={order.id} className={styles.orderMiniRow}>
                       <div>
-                        <span className={styles.orderMiniNumber}>#{order.order_number}</span> · {order.status}
+                        <Link
+                          href={`/manager/orders?search=${encodeURIComponent(order.order_number)}`}
+                          className={styles.orderMiniLink}
+                          title={`Inspect order ${order.order_number} in Orders Management`}
+                        >
+                          #{order.order_number}
+                        </Link>{" "}
+                        · {order.status}
                         <span className={styles.customerSub}>
                           {formatDate(order.ordered_at)} ·{" "}
                           {order.order_type === "dine_in"
@@ -383,7 +473,7 @@ export default function ManagerCustomerPage() {
                     type="button"
                     className={styles.btnDanger}
                     disabled={updatingStatus}
-                    onClick={() => void handleToggleAccountStatus(false)}
+                    onClick={handleDeactivateClick}
                   >
                     {updatingStatus ? "Updating..." : "Deactivate Customer Account"}
                   </button>
@@ -402,6 +492,42 @@ export default function ManagerCustomerPage() {
           )}
         </aside>
       </div>
+
+      {confirmDeactivateOpen && activeDetail && (
+        <div
+          className={styles.modalBackdrop}
+          role="dialog"
+          aria-modal="true"
+          aria-labelledby="customer-deactivate-modal-title"
+        >
+          <div className={styles.modalDialog}>
+            <h2 id="customer-deactivate-modal-title" className={styles.modalTitle}>
+              Deactivate {activeDetail.customer.full_name}?
+            </h2>
+            <p className={styles.modalText}>
+              Deactivating this account immediately invalidates active customer sessions and blocks sign-in while preserving all historical restaurant orders and receipts. Reason: <strong>{statusReason.trim()}</strong>
+            </p>
+            <div className={styles.modalActions}>
+              <button
+                type="button"
+                className={styles.modalCancelBtn}
+                disabled={updatingStatus}
+                onClick={() => setConfirmDeactivateOpen(false)}
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                className={styles.modalDangerBtn}
+                disabled={updatingStatus}
+                onClick={() => void handleToggleAccountStatus(false)}
+              >
+                {updatingStatus ? "Deactivating..." : "Confirm Deactivation"}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

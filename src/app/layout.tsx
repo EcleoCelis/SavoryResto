@@ -3,6 +3,7 @@ import { Geist, Geist_Mono } from "next/font/google";
 import { AuthProvider } from "../components/auth/AuthProvider";
 import { CartProvider } from "../components/cart/CartProvider";
 import { FulfillmentProvider } from "../components/fulfillment/FulfillmentProvider";
+import { RestaurantSettingsProvider } from "../components/settings/RestaurantSettingsProvider";
 import { ThemeProvider } from "../components/theme/ThemeProvider";
 import "./globals.css";
 
@@ -41,11 +42,13 @@ export default function RootLayout({ children }: LayoutProps<"/">) {
       <body className="min-h-full flex flex-col">
         <script dangerouslySetInnerHTML={{ __html: themeInitScript }} />
         <AuthProvider>
-          <ThemeProvider>
-            <CartProvider>
-              <FulfillmentProvider>{children}</FulfillmentProvider>
-            </CartProvider>
-          </ThemeProvider>
+          <RestaurantSettingsProvider>
+            <ThemeProvider>
+              <CartProvider>
+                <FulfillmentProvider>{children}</FulfillmentProvider>
+              </CartProvider>
+            </ThemeProvider>
+          </RestaurantSettingsProvider>
         </AuthProvider>
       </body>
     </html>

@@ -41,6 +41,20 @@ def _quantize_money(amount: Decimal | None) -> Decimal:
     return Decimal(str(amount if amount is not None else "0.00")).quantize(Decimal("0.01"))
 
 
+class OrderConflictError(ValueError):
+    """Raised when concurrent kitchen or manager updates stale an order action."""
+
+
+def _timestamps_match(actual: datetime, expected: datetime) -> bool:
+    actual_utc = actual if actual.tzinfo else actual.replace(tzinfo=timezone.utc)
+    expected_utc = expected if expected.tzinfo else expected.replace(tzinfo=timezone.utc)
+    return abs((actual_utc - expected_utc).total_seconds()) < 0.001
+
+
+def _contains_pattern(value: str) -> str:
+    return value.replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_")
+
+
 def serialize_kds_order(order: Order) -> KdsOrderResponse:
     return KdsOrderResponse(
         id=order.id,
@@ -153,12 +167,12 @@ def list_manager_orders_directory(
     """List paginated restaurant orders for Manager oversight with operational filters."""
     base_filters = []
     if search and search.strip():
-        pattern = f"%{search.strip()}%"
+        pattern = f"%{_contains_pattern(search.strip())}%"
         base_filters.append(
             or_(
-                Order.order_number.ilike(pattern),
-                Customer.full_name.ilike(pattern),
-                Customer.email.ilike(pattern),
+                Order.order_number.ilike(pattern, escape="\\"),
+                Customer.full_name.ilike(pattern, escape="\\"),
+                Customer.email.ilike(pattern, escape="\\"),
             )
         )
     if fulfillment_type != "all":
@@ -267,6 +281,7 @@ def update_manager_order_status(
     order_id: int,
     target_status: OrderStatus,
     cancellation_reason: str | None = None,
+    expected_updated_at: datetime | None = None,
 ) -> KdsOrderResponse | None:
     if staff_user.role.name != "manager":
         raise PermissionError("Only authorized managers may manage order fulfillment completion.")
@@ -281,6 +296,8 @@ def update_manager_order_status(
     )
     if order is None:
         return None
+    if expected_updated_at is not None and not _timestamps_match(order.updated_at, expected_updated_at):
+        raise OrderConflictError("This order was updated in another session or by KDS. Refresh orders and try again.")
 
     transition_order_status(order, target_status)
     if target_status is OrderStatus.CANCELLED:

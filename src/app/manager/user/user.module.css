@@ -646,6 +646,56 @@
   color: #ffffff;
 }
 
+:global(html[data-resolved-theme="dark"]) .modalConfirmDanger,
+:global(html[data-resolved-theme="dark"]) .actionBtnDanger:hover:not(:disabled) {
+  background: #b91c1c;
+  border-color: #b91c1c;
+  color: #ffffff;
+}
+
+.clearBtn {
+  background: transparent;
+  border: 1px solid var(--border-medium);
+  border-radius: 8px;
+  color: var(--text-secondary);
+  cursor: pointer;
+  font: inherit;
+  font-size: 0.82rem;
+  font-weight: 500;
+  height: 36px;
+  padding: 0 12px;
+  white-space: nowrap;
+  transition: background-color var(--motion-micro) var(--ease-standard),
+    color var(--motion-micro) var(--ease-standard),
+    border-color var(--motion-micro) var(--ease-standard);
+}
+
+.clearBtn:hover {
+  background: var(--brand-cream-surface);
+  border-color: var(--brand-green);
+  color: var(--text-primary);
+}
+
+.btnPrimary:focus-visible,
+.btnSecondary:focus-visible,
+.clearBtn:focus-visible,
+.sectionTab:focus-visible,
+.actionBtn:focus-visible,
+.actionBtnDanger:focus-visible,
+.pageBtn:focus-visible,
+.togglePwdBtn:focus-visible,
+.modalCancelBtn:focus-visible,
+.modalConfirmBtn:focus-visible {
+  outline: 2px solid var(--brand-gold);
+  outline-offset: 2px;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .spinningIcon {
+    animation: none;
+  }
+}
+
 .modalConfirmBtn:disabled,
 .modalCancelBtn:disabled {
   opacity: 0.55;
@@ -655,6 +705,65 @@
 @media (max-width: 1020px) {
   .securityGrid {
     grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .table th,
+  .table td {
+    padding: 10px;
+  }
+
+  .secondaryCell {
+    overflow-wrap: anywhere;
+  }
+
+  .table td:first-child .secondaryCell {
+    max-width: 185px;
+  }
+
+  .rowActions {
+    flex-direction: column;
+    align-items: flex-start;
+  }
+}
+
+@media (max-width: 720px) {
+  .table td:first-child .secondaryCell {
+    max-width: none;
+  }
+
+  .rowActions {
+    flex-direction: row;
+    padding-top: 4px;
+  }
+  .table thead {
+    display: none;
+  }
+
+  .table,
+  .table tbody {
+    display: block;
+    width: 100%;
+  }
+
+  .table tbody tr {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+    padding: 14px;
+    border-bottom: 1px solid var(--border-subtle);
+  }
+
+  .table tbody tr:last-child {
+    border-bottom: none;
+  }
+
+  .table td {
+    border-bottom: none;
+    padding: 0;
+  }
+
+  .rowActions {
+    padding-top: 4px;
   }
 }
 

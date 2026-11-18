@@ -8,6 +8,7 @@ import { useAuth } from "../../components/auth/AuthProvider";
 import { useFulfillment } from "../../components/fulfillment/FulfillmentProvider";
 import { Footer } from "../../components/layout/Footer";
 import { Header } from "../../components/layout/Header";
+import { useRestaurantSettings } from "../../components/settings/RestaurantSettingsProvider";
 import {
   ArrowRightIcon,
   CheckIcon,
@@ -23,8 +24,18 @@ function StartOrderContent() {
   const searchParams = useSearchParams();
   const { user } = useAuth();
   const { selection, setSelection } = useFulfillment();
+  const { settings } = useRestaurantSettings();
+  const orderingPaused = !settings.ordering.online_ordering_enabled;
+  const takeoutAllowed = settings.ordering.takeout_enabled && !orderingPaused;
+  const dineInAllowed = settings.ordering.dine_in_enabled && !orderingPaused;
+
   const [manualOrderType, setOrderType] = useState<OrderType | null>(selection?.orderType ?? null);
-  const orderType = manualOrderType ?? selection?.orderType ?? user?.default_order_type ?? null;
+  const rawOrderType = manualOrderType ?? selection?.orderType ?? user?.default_order_type ?? null;
+  const orderType =
+    (rawOrderType === "takeout" && !takeoutAllowed) ||
+    (rawOrderType === "dine_in" && !dineInAllowed)
+      ? null
+      : rawOrderType;
   const [tableId, setTableId] = useState<number | null>(selection?.restaurantTableId ?? null);
   const [tables, setTables] = useState<RestaurantTable[]>([]);
   const [error, setError] = useState("");
@@ -90,43 +101,54 @@ function StartOrderContent() {
         </header>
 
         <section className={styles.card} aria-label="Dining service options">
+          {orderingPaused && (
+            <p className={styles.error} role="alert">
+              Online ordering is currently paused.{" "}
+              {settings.ordering.online_ordering_pause_reason ||
+                "Please check back shortly or contact the restaurant."}
+            </p>
+          )}
           <fieldset>
             <legend>Select Dining Mode</legend>
-            <label className={orderType === "takeout" ? styles.selected : undefined}>
-              <input
-                type="radio"
-                name="dining-mode"
-                checked={orderType === "takeout"}
-                onChange={() => {
-                  setOrderType("takeout");
-                  setTableId(null);
-                  setError("");
-                }}
-              />
-              <b style={{ display: "inline-flex", alignItems: "center", gap: "6px" }}>
-                <ShoppingBagIcon size={18} />
-                <span>Take Out · Counter Pickup</span>
-              </b>
-              <small>Your dishes will be carefully packed fresh and ready for pickup at our counter.</small>
-            </label>
+            {takeoutAllowed && (
+              <label className={orderType === "takeout" ? styles.selected : undefined}>
+                <input
+                  type="radio"
+                  name="dining-mode"
+                  checked={orderType === "takeout"}
+                  onChange={() => {
+                    setOrderType("takeout");
+                    setTableId(null);
+                    setError("");
+                  }}
+                />
+                <b style={{ display: "inline-flex", alignItems: "center", gap: "6px" }}>
+                  <ShoppingBagIcon size={18} />
+                  <span>Take Out · Counter Pickup</span>
+                </b>
+                <small>Your dishes will be carefully packed fresh and ready for pickup at our counter.</small>
+              </label>
+            )}
 
-            <label className={orderType === "dine_in" ? styles.selected : undefined}>
-              <input
-                type="radio"
-                name="dining-mode"
-                checked={orderType === "dine_in"}
-                onChange={() => {
-                  setOrderType("dine_in");
-                  setTableId(null);
-                  setError("");
-                }}
-              />
-              <b style={{ display: "inline-flex", alignItems: "center", gap: "6px" }}>
-                <UtensilsIcon size={18} />
-                <span>Dine In · Table Service</span>
-              </b>
-              <small>Relax at your table. Our kitchen staff will bring your freshly cooked dishes to you.</small>
-            </label>
+            {dineInAllowed && (
+              <label className={orderType === "dine_in" ? styles.selected : undefined}>
+                <input
+                  type="radio"
+                  name="dining-mode"
+                  checked={orderType === "dine_in"}
+                  onChange={() => {
+                    setOrderType("dine_in");
+                    setTableId(null);
+                    setError("");
+                  }}
+                />
+                <b style={{ display: "inline-flex", alignItems: "center", gap: "6px" }}>
+                  <UtensilsIcon size={18} />
+                  <span>Dine In · Table Service</span>
+                </b>
+                <small>Relax at your table. Our kitchen staff will bring your freshly cooked dishes to you.</small>
+              </label>
+            )}
           </fieldset>
 
           {orderType === "dine_in" ? (

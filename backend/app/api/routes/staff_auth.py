@@ -1,20 +1,24 @@
 import logging
 import time
 from collections import defaultdict
-from datetime import timedelta
+from datetime import datetime, timedelta, timezone
 
 from fastapi import APIRouter, Depends, HTTPException, Request, Response, status
 from sqlalchemy.orm import Session
 
 from app.core.config import settings
+from app.core.password_policy import validate_password_strength
 from app.core.security import (
     create_staff_access_token,
     get_client_ip,
     get_current_staff,
     get_optional_current_staff,
+    hash_password,
+    verify_password,
 )
 from app.db.database import get_db
 from app.db.models.staff import StaffUser
+from app.schemas.settings import StaffChangePasswordRequest
 from app.schemas.staff import StaffLoginRequest, StaffLoginResponse, StaffResponse
 from app.services.audit_service import record_audit_event
 from app.services.staff_service import ALLOWED_STAFF_ROLES, authenticate_staff
@@ -204,3 +208,80 @@ def logout(
         path="/",
     )
     return {"message": "Staff signed out successfully."}
+
+
+@router.post("/change-password")
+def change_staff_password(
+    payload: StaffChangePasswordRequest,
+    response: Response,
+    req: Request,
+    current_staff: StaffUser = Depends(get_current_staff),
+    db: Session = Depends(get_db),
+):
+    """Change the signed-in staff member's own password after current-password verification."""
+    client_ip = get_client_ip(req)
+    if not current_staff.password_hash or not verify_password(
+        payload.current_password, current_staff.password_hash
+    ):
+        record_audit_event(
+            db=db,
+            event_type="staff.password_change",
+            actor_type="staff",
+            actor_id=current_staff.id,
+            actor_email=current_staff.email,
+            target_type="staff",
+            target_id=str(current_staff.id),
+            outcome="failure",
+            ip_address=client_ip,
+            details={"reason": "invalid_current_password"},
+        )
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Current password is incorrect.",
+        )
+
+    if payload.current_password == payload.new_password:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="New password must differ from your current password.",
+        )
+
+    valid_pwd, pwd_err = validate_password_strength(payload.new_password)
+    if not valid_pwd:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=pwd_err)
+
+    new_hash = hash_password(payload.new_password)
+    current_staff.password_hash = new_hash
+    current_staff.legacy_password = new_hash
+    current_staff.updated_at = datetime.now(timezone.utc)
+    db.flush()
+
+    record_audit_event(
+        db=db,
+        event_type="staff.password_change",
+        actor_type="staff",
+        actor_id=current_staff.id,
+        actor_email=current_staff.email,
+        target_type="staff",
+        target_id=str(current_staff.id),
+        outcome="success",
+        ip_address=client_ip,
+        details={"role": current_staff.role.name},
+    )
+
+    expires = timedelta(minutes=settings.STAFF_ACCESS_TOKEN_EXPIRE_MINUTES)
+    token_str = create_staff_access_token(
+        current_staff.id,
+        expires,
+        role=current_staff.role.name,
+    )
+    response.set_cookie(
+        "staff_access_token",
+        token_str,
+        httponly=True,
+        secure=settings.cookie_secure,
+        samesite="lax",
+        max_age=int(expires.total_seconds()),
+        path="/",
+    )
+    return {"message": "Password updated successfully."}
