@@ -1,4 +1,5 @@
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, Request, status
+from pydantic import TypeAdapter
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
@@ -15,14 +16,24 @@ from app.services.catalog_service import (
     list_manager_categories,
     update_category,
 )
+from app.services.response_cache import cached_json_response
 
 
 router = APIRouter(prefix="/api/v1/categories", tags=["Categories"])
+_CATEGORY_LIST_ADAPTER = TypeAdapter(list[CategoryResponse])
 
 
 @router.get("", response_model=list[CategoryResponse])
-def get_categories(db: Session = Depends(get_db)):
-    return list_categories(db)
+def get_categories(request: Request, db: Session = Depends(get_db)):
+    return cached_json_response(
+        request,
+        namespace="catalog",
+        cache_key="catalog:categories:active",
+        ttl_seconds=120,
+        max_age_seconds=60,
+        swr_seconds=300,
+        compute_json_bytes=lambda: _CATEGORY_LIST_ADAPTER.dump_json(list_categories(db)),
+    )
 
 
 @router.get(

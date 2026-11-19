@@ -13,6 +13,7 @@ from app.schemas.settings import (
     PublicRestaurantSettingsResponse,
     RestaurantInfoUpdateRequest,
 )
+from app.services.response_cache import cached_json_response
 from app.services.settings_service import (
     SettingsConflictError,
     get_manager_settings,
@@ -29,9 +30,17 @@ perm_system_config = require_permission(Permission.SYSTEM_CONFIG_MANAGE)
 
 
 @router.get("/api/v1/restaurant/settings", response_model=PublicRestaurantSettingsResponse)
-def read_public_restaurant_settings(db: Session = Depends(get_db)):
+def read_public_restaurant_settings(request: Request, db: Session = Depends(get_db)):
     """Publicly expose non-sensitive SavoryBites restaurant info, hours, and ordering rules."""
-    return get_public_restaurant_settings(db)
+    return cached_json_response(
+        request,
+        namespace="settings",
+        cache_key="settings:public",
+        ttl_seconds=15,
+        max_age_seconds=30,
+        swr_seconds=120,
+        compute_json_bytes=lambda: get_public_restaurant_settings(db).model_dump_json().encode("utf-8"),
+    )
 
 
 @router.get("/api/v1/manager/settings", response_model=ManagerSettingsResponse)

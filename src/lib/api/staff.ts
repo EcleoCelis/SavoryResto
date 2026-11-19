@@ -42,6 +42,11 @@ import type {
   TopSellingDishesResponse,
 } from "../../types/staff";
 import { notifyAuthStateChanged } from "../rbac";
+import {
+  fetchWithSwrCache,
+  getSwrSnapshot,
+  invalidateSwrPrefix,
+} from "../swrCache";
 import { getApiBaseUrl } from "./base-url";
 
 export class StaffApiError extends Error {
@@ -1006,18 +1011,30 @@ function normalizeManagerSettings(res: ManagerSettingsResponse): ManagerSettings
   };
 }
 
+export const PUBLIC_SETTINGS_CACHE_KEY = "settings:public";
+
+export function getCachedPublicRestaurantSettings(): PublicRestaurantSettingsResponse | null {
+  return getSwrSnapshot<PublicRestaurantSettingsResponse>(PUBLIC_SETTINGS_CACHE_KEY);
+}
+
 export function getPublicRestaurantSettings(
-  signal?: AbortSignal
+  signal?: AbortSignal,
+  options: { force?: boolean } = {}
 ): Promise<PublicRestaurantSettingsResponse> {
-  return request<PublicRestaurantSettingsResponse>("/api/v1/restaurant/settings", {
-    signal,
-  }).then((res) => ({
-    ...res,
-    ordering: {
-      ...res.ordering,
-      minimum_order_amount: parseStrictNumber(res.ordering.minimum_order_amount),
-    },
-  }));
+  return fetchWithSwrCache(
+    PUBLIC_SETTINGS_CACHE_KEY,
+    () =>
+      request<PublicRestaurantSettingsResponse>("/api/v1/restaurant/settings", {
+        signal,
+      }).then((res) => ({
+        ...res,
+        ordering: {
+          ...res.ordering,
+          minimum_order_amount: parseStrictNumber(res.ordering.minimum_order_amount),
+        },
+      })),
+    { freshMs: 20_000, force: options.force }
+  );
 }
 
 export function getManagerSettings(signal?: AbortSignal): Promise<ManagerSettingsResponse> {
@@ -1041,7 +1058,12 @@ export function updateManagerRestaurantInfo(payload: {
     method: "PATCH",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify(payload),
-  }).then(normalizeManagerSettings);
+  })
+    .then(normalizeManagerSettings)
+    .then((res) => {
+      invalidateSwrPrefix("settings:");
+      return res;
+    });
 }
 
 export function updateManagerBusinessHours(payload: {
@@ -1052,7 +1074,12 @@ export function updateManagerBusinessHours(payload: {
     method: "PATCH",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify(payload),
-  }).then(normalizeManagerSettings);
+  })
+    .then(normalizeManagerSettings)
+    .then((res) => {
+      invalidateSwrPrefix("settings:");
+      return res;
+    });
 }
 
 export function updateManagerOrderingSettings(payload: {
@@ -1069,7 +1096,12 @@ export function updateManagerOrderingSettings(payload: {
     method: "PATCH",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify(payload),
-  }).then(normalizeManagerSettings);
+  })
+    .then(normalizeManagerSettings)
+    .then((res) => {
+      invalidateSwrPrefix("settings:");
+      return res;
+    });
 }
 
 export function updateManagerNotificationSettings(payload: {
@@ -1081,7 +1113,12 @@ export function updateManagerNotificationSettings(payload: {
     method: "PATCH",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify(payload),
-  }).then(normalizeManagerSettings);
+  })
+    .then(normalizeManagerSettings)
+    .then((res) => {
+      invalidateSwrPrefix("settings:");
+      return res;
+    });
 }
 
 export function changeStaffPassword(payload: {

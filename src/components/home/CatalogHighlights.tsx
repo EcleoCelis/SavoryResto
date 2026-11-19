@@ -5,7 +5,13 @@ import Link from "next/link";
 import { useEffect, useState } from "react";
 
 import styles from "../../app/home.module.css";
-import { getCategories, getProducts } from "../../lib/api/products";
+import {
+  CATEGORIES_CACHE_KEY,
+  getCategories,
+  getProducts,
+  getProductsCacheKey,
+} from "../../lib/api/products";
+import { useSwrValue } from "../../lib/useSwrValue";
 import { ArrowRightIcon } from "../ui/Icons";
 import type { Category, Product } from "../../types/product";
 
@@ -25,24 +31,24 @@ const categoryImages: Record<string, string> = {
 };
 
 export function BestSellers() {
-  const [products, setProducts] = useState<Product[]>([]);
-  const [loading, setLoading] = useState(true);
+  const cachedProducts = useSwrValue<Product[]>(getProductsCacheKey());
+  const [settled, setSettled] = useState(false);
   const [failedImageIds, setFailedImageIds] = useState<Set<number>>(new Set());
 
   useEffect(() => {
     let active = true;
     void getProducts()
-      .then((loadedProducts) => {
-        if (active) setProducts(loadedProducts.slice(0, 3));
-      })
       .catch(() => undefined)
       .finally(() => {
-        if (active) setLoading(false);
+        if (active) setSettled(true);
       });
     return () => {
       active = false;
     };
   }, []);
+
+  const products = (cachedProducts ?? []).slice(0, 3);
+  const loading = !settled && cachedProducts === null;
 
   return (
     <section className={styles.bestsellers} aria-labelledby="featured-dishes-title">
@@ -66,6 +72,7 @@ export function BestSellers() {
                     src={product.image_url}
                     alt={product.name}
                     fill
+                    loading="eager"
                     sizes="(max-width: 850px) 100vw, 33vw"
                     onError={() => {
                       setFailedImageIds((prev) => new Set(prev).add(product.id));
@@ -103,23 +110,23 @@ export function BestSellers() {
 }
 
 export function PopularCategories() {
-  const [categories, setCategories] = useState<Category[]>([]);
-  const [loading, setLoading] = useState(true);
+  const cachedCategories = useSwrValue<Category[]>(CATEGORIES_CACHE_KEY);
+  const [settled, setSettled] = useState(false);
 
   useEffect(() => {
     let active = true;
     void getCategories()
-      .then((loadedCategories) => {
-        if (active) setCategories(loadedCategories.slice(0, 6));
-      })
       .catch(() => undefined)
       .finally(() => {
-        if (active) setLoading(false);
+        if (active) setSettled(true);
       });
     return () => {
       active = false;
     };
   }, []);
+
+  const categories = (cachedCategories ?? []).slice(0, 6);
+  const loading = !settled && cachedCategories === null;
 
   return (
     <section className={styles.cream} aria-labelledby="categories-title">
@@ -145,6 +152,7 @@ export function PopularCategories() {
                       src={image}
                       alt={category.name}
                       fill
+                      loading="eager"
                       sizes="(max-width: 520px) 42vw, (max-width: 850px) 28vw, 15vw"
                     />
                   </span>

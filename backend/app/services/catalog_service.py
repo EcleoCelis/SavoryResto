@@ -13,6 +13,7 @@ from app.db.models.product_option import MenuItemAddon, MenuItemSize
 from app.schemas.category import CategoryCreate, CategoryUpdate
 from app.schemas.product import ProductCreate, ProductUpdate
 from app.services.media_storage_service import delete_stored_dish_image
+from app.services.response_cache import invalidate_namespace
 
 
 class CatalogConflictError(ValueError):
@@ -95,6 +96,7 @@ def create_category(db: Session, data: CategoryCreate) -> MenuCategory:
         db.rollback()
         raise CatalogConflictError(f"A category with name '{clean_name}' already exists.") from exc
     db.refresh(category)
+    invalidate_namespace("catalog")
     return category
 
 
@@ -128,6 +130,7 @@ def update_category(db: Session, category_id: int, data: CategoryUpdate) -> Menu
         db.rollback()
         raise CatalogConflictError("Category update conflicted with an existing record.") from exc
     db.refresh(category)
+    invalidate_namespace("catalog")
     return category
 
 
@@ -150,9 +153,11 @@ def delete_category(db: Session, category_id: int) -> tuple[bool, str]:
         category.is_active = False
         category.updated_at = datetime.now(timezone.utc)
         db.commit()
+        invalidate_namespace("catalog")
         return True, f"Category '{category.name}' was deactivated because historical dishes reference it."
     db.delete(category)
     db.commit()
+    invalidate_namespace("catalog")
     return True, "Category deleted successfully."
 
 
@@ -280,6 +285,7 @@ def create_product(db: Session, data: ProductCreate) -> MenuProduct:
     )
     db.add(default_size)
     db.commit()
+    invalidate_namespace("catalog")
 
     return get_product_any_status(db, product.id)  # type: ignore[return-value]
 
@@ -308,6 +314,7 @@ def update_product(db: Session, product_id: int, data: ProductUpdate) -> MenuPro
         product.is_available = data.is_available
     product.updated_at = datetime.now(timezone.utc)
     db.commit()
+    invalidate_namespace("catalog")
     # Compensating cleanup: if an uploaded image was replaced, remove the old file
     if data.image_url is not None and old_image_url and old_image_url != product.image_url:
         delete_stored_dish_image(old_image_url)
@@ -321,6 +328,7 @@ def update_product_availability(db: Session, product_id: int, is_available: bool
     product.is_available = is_available
     product.updated_at = datetime.now(timezone.utc)
     db.commit()
+    invalidate_namespace("catalog")
     return get_product_any_status(db, product_id)
 
 
@@ -333,4 +341,5 @@ def delete_product(db: Session, product_id: int) -> bool:
     product.is_available = False
     product.updated_at = now
     db.commit()
+    invalidate_namespace("catalog")
     return True

@@ -12,8 +12,9 @@ import {
   getCustomerProfile,
   removeCustomerFavorite,
 } from "../../lib/api/customer";
-import { getProduct } from "../../lib/api/products";
+import { getProduct, getProductCacheKey } from "../../lib/api/products";
 import { detectDishConflicts } from "../../lib/personalization";
+import { useSwrValue } from "../../lib/useSwrValue";
 import type { CustomerProfile } from "../../types/customer";
 import type { Product } from "../../types/product";
 import { HeartIcon } from "../ui/Icons";
@@ -29,7 +30,7 @@ const currencyFormatter = new Intl.NumberFormat("en-PH", {
 export function ProductDetail({ productId }: { productId: string }) {
   const router = useRouter();
   const { isAuthenticated } = useAuth();
-  const [product, setProduct] = useState<Product | null>(null);
+  const product = useSwrValue<Product>(getProductCacheKey(productId));
   const [isFavorite, setIsFavorite] = useState(false);
   const [favoriteBusy, setFavoriteBusy] = useState(false);
   const [failedImageUrl, setFailedImageUrl] = useState<string | null>(null);
@@ -39,8 +40,8 @@ export function ProductDetail({ productId }: { productId: string }) {
   useEffect(() => {
     let active = true;
     void getProduct(productId)
-      .then((loadedProduct) => {
-        if (active) setProduct(loadedProduct);
+      .then(() => {
+        if (active) setError("");
       })
       .catch(() => {
         if (active) setError("This menu dish is currently unavailable.");

@@ -14,8 +14,15 @@ import {
   getCustomerProfile,
   removeCustomerFavorite,
 } from "../../lib/api/customer";
-import { getCategories, getProducts } from "../../lib/api/products";
+import {
+  CATEGORIES_CACHE_KEY,
+  getCachedProducts,
+  getCategories,
+  getProducts,
+  getProductsCacheKey,
+} from "../../lib/api/products";
 import { detectDishConflicts } from "../../lib/personalization";
+import { useSwrValue } from "../../lib/useSwrValue";
 import { HeartIcon, PlusIcon, SearchIcon } from "../ui/Icons";
 import { AllergyConflictNotice } from "./AllergyConflictNotice";
 import type { CustomerProfile } from "../../types/customer";
@@ -26,6 +33,9 @@ const currencyFormatter = new Intl.NumberFormat("en-PH", {
   currency: "PHP",
   minimumFractionDigits: 2,
 });
+
+const EMPTY_CATEGORIES: Category[] = [];
+const EMPTY_PRODUCTS: Product[] = [];
 
 type AvailabilityFilter = "available" | "unavailable" | "all";
 
@@ -47,13 +57,14 @@ export function MenuCatalog() {
   const search = searchParams.get("search")?.trim() ?? "";
   const availability = parseAvailability(searchParams.get("availability"));
   const { isAuthenticated } = useAuth();
-  const [categories, setCategories] = useState<Category[]>([]);
-  const [products, setProducts] = useState<Product[]>([]);
+  const cachedCategories = useSwrValue<Category[]>(CATEGORIES_CACHE_KEY);
+  const productCacheKey = getProductsCacheKey({ categoryId, search, availability });
+  const cachedProducts = useSwrValue<Product[]>(productCacheKey);
   const [favoriteIds, setFavoriteIds] = useState<Set<number>>(new Set());
   const [failedImageIds, setFailedImageIds] = useState<Set<number>>(new Set());
   const [customerProfile, setCustomerProfile] = useState<CustomerProfile | null>(null);
   const [error, setError] = useState("");
-  const [loading, setLoading] = useState(true);
+  const [settledKey, setSettledKey] = useState("");
   const categoryNavRef = useRef<HTMLElement>(null);
   const searchInputRef = useRef<HTMLInputElement>(null);
 
@@ -145,6 +156,10 @@ export function MenuCatalog() {
     }
   }
 
+  const categories = cachedCategories ?? EMPTY_CATEGORIES;
+  const products = cachedProducts ?? EMPTY_PRODUCTS;
+  const loading = settledKey !== productCacheKey && cachedProducts === null;
+
   useEffect(() => {
     const nav = categoryNavRef.current;
     if (!nav || nav.scrollWidth <= nav.clientWidth) return; // desktop rail / no overflow
@@ -170,24 +185,24 @@ export function MenuCatalog() {
       getCategories(),
       getProducts({ categoryId, search, availability }),
     ])
-      .then(([loadedCategories, loadedProducts]) => {
+      .then(() => {
         if (!active) return;
         setError("");
-        setCategories(loadedCategories);
-        setProducts(loadedProducts);
       })
       .catch(() => {
-        if (active) setError("The menu is temporarily unavailable. Please try again shortly.");
+        if (active && getCachedProducts({ categoryId, search, availability }) === null) {
+          setError("The menu is temporarily unavailable. Please try again shortly.");
+        }
       })
       .finally(() => {
-        if (active) setLoading(false);
+        if (active) setSettledKey(productCacheKey);
       });
     return () => {
       active = false;
     };
-  }, [availability, categoryId, search]);
+  }, [availability, categoryId, productCacheKey, search]);
 
-  if (error) {
+  if (error && products.length === 0) {
     return (
       <div className={styles.catalogMessage} role="alert">
         <p>{error}</p>
@@ -329,7 +344,7 @@ export function MenuCatalog() {
 
         {/* Product Grid */}
         <div className={styles.grid}>
-          {products.map((product) => {
+          {products.map((product, index) => {
             const isFavorite = activeFavoriteIds.has(product.id);
             const conflicts = detectDishConflicts(product, activeProfile);
             return (
@@ -347,6 +362,7 @@ export function MenuCatalog() {
                     <Image
                       src={product.image_url}
                       alt={product.name}
+                      loading={index < 6 ? "eager" : "lazy"}
                       sizes="(max-width: 360px) 76px, (max-width: 640px) 84px, (max-width: 1080px) 96px, 116px"
                       fill
                       onError={() => {

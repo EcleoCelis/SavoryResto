@@ -10,7 +10,11 @@ import {
 } from "react";
 
 import { getLiveOperatingStatus, RESTAURANT_INFO } from "../../config/restaurant";
-import { getPublicRestaurantSettings } from "../../lib/api/staff";
+import {
+  getPublicRestaurantSettings,
+  PUBLIC_SETTINGS_CACHE_KEY,
+} from "../../lib/api/staff";
+import { useSwrValue } from "../../lib/useSwrValue";
 import type { PublicRestaurantSettingsResponse } from "../../types/staff";
 
 const SETTINGS_CHANGED_EVENT = "savorybites-restaurant-settings-changed";
@@ -63,13 +67,15 @@ type RestaurantSettingsContextValue = {
   refresh: () => void;
 };
 
+const FALLBACK_SETTINGS = buildFallbackSettings();
+
 const RestaurantSettingsContext = createContext<RestaurantSettingsContextValue>({
-  settings: buildFallbackSettings(),
+  settings: FALLBACK_SETTINGS,
   refresh: () => {},
 });
 
 export function RestaurantSettingsProvider({ children }: { children: ReactNode }) {
-  const [settings, setSettings] = useState<PublicRestaurantSettingsResponse>(buildFallbackSettings);
+  const cachedSettings = useSwrValue<PublicRestaurantSettingsResponse>(PUBLIC_SETTINGS_CACHE_KEY);
   const [reloadNonce, setReloadNonce] = useState(0);
 
   const refresh = useCallback(() => {
@@ -78,12 +84,7 @@ export function RestaurantSettingsProvider({ children }: { children: ReactNode }
 
   useEffect(() => {
     const controller = new AbortController();
-    void getPublicRestaurantSettings(controller.signal)
-      .then((loaded) => {
-        if (!controller.signal.aborted) {
-          setSettings(loaded);
-        }
-      })
+    void getPublicRestaurantSettings(controller.signal, { force: reloadNonce > 0 })
       .catch(() => {
         // Keep fallback values cleanly when API is unreachable during startup
       });
@@ -97,6 +98,8 @@ export function RestaurantSettingsProvider({ children }: { children: ReactNode }
     window.addEventListener(SETTINGS_CHANGED_EVENT, handleExternalUpdate);
     return () => window.removeEventListener(SETTINGS_CHANGED_EVENT, handleExternalUpdate);
   }, []);
+
+  const settings = cachedSettings ?? FALLBACK_SETTINGS;
 
   return (
     <RestaurantSettingsContext.Provider value={{ settings, refresh }}>

@@ -25,6 +25,7 @@ from app.schemas.settings import (
 )
 from app.services.audit_service import record_audit_event
 from app.services.payment_method_service import list_manager_payment_methods
+from app.services.response_cache import invalidate_namespace
 
 MANILA_TZ = ZoneInfo("Asia/Manila")
 
@@ -391,6 +392,7 @@ def update_restaurant_info(
             "updated": {"name": cfg.name, "phone": cfg.phone, "email": cfg.email, "locality": cfg.locality},
         },
     )
+    invalidate_namespace("settings")
     return get_manager_settings(db)
 
 
@@ -435,6 +437,7 @@ def update_business_hours(
         ip_address=ip_address,
         details={"version": cfg.version, "schedule": open_days_summary},
     )
+    invalidate_namespace("settings")
     return get_manager_settings(db)
 
 
@@ -492,6 +495,7 @@ def update_ordering_settings(
             },
         },
     )
+    invalidate_namespace("settings")
     return get_manager_settings(db)
 
 
@@ -535,4 +539,5 @@ def update_notification_settings(
             },
         },
     )
+    invalidate_namespace("settings")
     return get_manager_settings(db)

@@ -1,4 +1,5 @@
-from fastapi import APIRouter, Depends, File, HTTPException, Query, UploadFile, status
+from fastapi import APIRouter, Depends, File, HTTPException, Query, Request, UploadFile, status
+from pydantic import TypeAdapter
 from sqlalchemy.orm import Session
 
 from app.core.permissions import Permission
@@ -24,19 +25,35 @@ from app.services.catalog_service import (
     update_product_availability,
 )
 from app.services.media_storage_service import delete_stored_dish_image, save_dish_image
+from app.services.response_cache import cached_json_response
 
 
 router = APIRouter(prefix="/api/v1/products", tags=["Products"])
+_PRODUCT_LIST_ADAPTER = TypeAdapter(list[ProductResponse])
 
 
 @router.get("", response_model=list[ProductResponse])
 def get_products(
+    request: Request,
     category_id: int | None = Query(default=None, gt=0),
     search: str | None = Query(default=None, max_length=100),
     availability: AvailabilityFilter = Query(default="available"),
     db: Session = Depends(get_db),
 ):
-    return list_products(db, category_id, search, availability)
+    clean_search = search.strip().lower() if search and search.strip() else ""
+    cache_key = f"catalog:products:c={category_id}:a={availability}:s={clean_search}"
+    return cached_json_response(
+        request,
+        namespace="catalog",
+        cache_key=cache_key,
+        ttl_seconds=120,
+        max_age_seconds=60,
+        swr_seconds=300,
+        store_in_memory=not bool(clean_search),
+        compute_json_bytes=lambda: _PRODUCT_LIST_ADAPTER.dump_json(
+            list_products(db, category_id, search, availability)
+        ),
+    )
 
 
 @router.get(
@@ -178,8 +195,22 @@ def delete_product_endpoint(
         }
     },
 )
-def get_product_by_id(product_id: int, db: Session = Depends(get_db)):
-    product = get_product(db, product_id)
-    if product is None:
+def get_product_by_id(request: Request, product_id: int, db: Session = Depends(get_db)):
+    def _build() -> bytes | None:
+        product = get_product(db, product_id)
+        if product is None:
+            return None
+        return ProductResponse.model_validate(product).model_dump_json().encode("utf-8")
+
+    response = cached_json_response(
+        request,
+        namespace="catalog",
+        cache_key=f"catalog:product:{product_id}",
+        ttl_seconds=120,
+        max_age_seconds=60,
+        swr_seconds=300,
+        compute_json_bytes=_build,
+    )
+    if response is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Product not found.")
-    return product
+    return response
